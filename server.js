@@ -15,9 +15,6 @@ const __dirname = path.dirname(__filename);
 // Load environment variables
 dotenv.config();
 
-// Connect to MongoDB
-connectDB();
-
 const app = express();
 
 // Middleware
@@ -57,8 +54,19 @@ const seedDefaultAdmin = async () => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, async () => {
-  console.log(`Backend Server running on port ${PORT}`);
-  await seedDefaultAdmin();
-  await seedGalleryItems();
-});
+// Start Server after connecting to DB
+const startApp = async () => {
+  try {
+    await connectDB();
+    await seedDefaultAdmin();
+    await seedGalleryItems();
+  } catch (dbErr) {
+    console.error('Warning: Server started without DB connection. Please configure MONGO_URI in Render environment variables.');
+  }
+
+  app.listen(PORT, () => {
+    console.log(`Backend Server running on port ${PORT}`);
+  });
+};
+
+startApp();
