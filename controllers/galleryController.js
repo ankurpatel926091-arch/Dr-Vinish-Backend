@@ -118,7 +118,7 @@ export const createGalleryItem = async (req, res) => {
       publicId,
       tag: tag || '',
       active: active === 'false' ? false : Boolean(active),
-      isLocal: isLocal === 'true' || Boolean(req.file),
+      isLocal: publicId ? false : (isLocal === 'true' || (req.file && finalUrl.includes('/uploads/'))),
       fileName: fileName || (req.file ? req.file.originalname : '')
     });
 
