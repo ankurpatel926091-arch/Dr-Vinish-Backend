@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import Admin from '../models/Admin.js';
+import cloudinary from '../config/cloudinary.js';
 
 // Helper: Generate JWT Token
 const generateToken = (id) => {
@@ -150,3 +151,75 @@ export const logoutAdmin = async (req, res) => {
     message: 'Logged out successfully'
   });
 };
+
+// @desc    Upload Media File to Cloudinary (with local fallback)
+// @route   POST /api/admin/upload
+// @access  Private (Protected)
+export const uploadMedia = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    const mime = req.file.mimetype;
+    const resourceType = mime.startsWith('video/') ? 'video' : 'image';
+    let finalUrl = '';
+    let publicId = '';
+
+    const hasCloudinary = process.env.CLOUDINARY_CLOUD_NAME &&
+      process.env.CLOUDINARY_API_KEY;
+
+    if (hasCloudinary) {
+      try {
+        const cldResult = await new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            {
+              folder: 'dr_vinish_uploads',
+              resource_type: resourceType
+            },
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result);
+            }
+          );
+          uploadStream.end(req.file.buffer);
+        });
+        finalUrl = cldResult.secure_url;
+        publicId = cldResult.public_id;
+      } catch (cldErr) {
+        console.warn('Cloudinary upload warning, falling back to disk:', cldErr.message);
+      }
+    }
+
+    if (!finalUrl) {
+      const pathModule = await import('path');
+      const fsModule = await import('fs');
+      const uploadsFolder = pathModule.join(process.cwd(), 'uploads');
+      if (!fsModule.existsSync(uploadsFolder)) {
+        fsModule.mkdirSync(uploadsFolder, { recursive: true });
+      }
+
+      const ext = pathModule.extname(req.file.originalname) || (resourceType === 'video' ? '.mp4' : '.png');
+      const uniqueName = `media_${Date.now()}_${Math.round(Math.random() * 1E6)}${ext}`;
+      const filePath = pathModule.join(uploadsFolder, uniqueName);
+
+      fsModule.writeFileSync(filePath, req.file.buffer);
+
+      const protocol = req.protocol || 'http';
+      const host = req.get('host') || 'localhost:5000';
+      finalUrl = `${protocol}://${host}/uploads/${uniqueName}`;
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Media uploaded successfully',
+      url: finalUrl,
+      publicId,
+      isCloudinary: Boolean(publicId)
+    });
+  } catch (error) {
+    console.error('Media Upload Error:', error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
