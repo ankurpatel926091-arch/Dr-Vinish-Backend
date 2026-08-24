@@ -7,9 +7,11 @@ import connectDB from './config/db.js';
 import adminRoutes from './routes/adminRoutes.js';
 import galleryRoutes from './routes/galleryRoutes.js';
 import blogRoutes from './routes/blogRoutes.js';
+import enquiryRoutes from './routes/enquiryRoutes.js';
 import Admin from './models/Admin.js';
 import { seedGalleryItems } from './controllers/galleryController.js';
 import { seedBlogsIfEmpty } from './controllers/blogController.js';
+import { seedInitialEnquiries } from './controllers/enquiryController.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -31,6 +33,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/admin', adminRoutes);
 app.use('/api/gallery', galleryRoutes);
 app.use('/api/blogs', blogRoutes);
+app.use('/api/enquiries', enquiryRoutes);
 
 // Health check endpoint
 app.get('/', (req, res) => {
@@ -64,6 +67,7 @@ const startApp = async () => {
     await seedBlogsIfEmpty();
     await seedDefaultAdmin();
     await seedGalleryItems();
+    await seedInitialEnquiries();
   } catch (dbErr) {
     console.error('Warning: Server started without DB connection. Please configure MONGO_URI in Render environment variables.');
   }

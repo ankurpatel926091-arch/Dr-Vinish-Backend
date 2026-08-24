@@ -1,20 +1,8 @@
 import GalleryItem from '../models/GalleryItem.js';
 import cloudinary from '../config/cloudinary.js';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const uploadsDir = path.join(__dirname, '../uploads');
-
-// Ensure uploads folder exists
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
 
 // Stream upload buffer to Cloudinary
-const uploadToCloudinary = (fileBuffer, mimetype, resourceType = 'auto') => {
+const uploadToCloudinary = (fileBuffer, resourceType = 'auto') => {
   return new Promise((resolve, reject) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
@@ -28,6 +16,15 @@ const uploadToCloudinary = (fileBuffer, mimetype, resourceType = 'auto') => {
     );
     uploadStream.end(fileBuffer);
   });
+};
+
+// Check if Cloudinary credentials exist in environment
+const isCloudinaryConfigured = () => {
+  return Boolean(
+    process.env.CLOUDINARY_CLOUD_NAME &&
+    process.env.CLOUDINARY_API_KEY &&
+    process.env.CLOUDINARY_API_SECRET
+  );
 };
 
 // @desc    Get active gallery items for public website
@@ -67,64 +64,63 @@ export const getAdminGallery = async (req, res) => {
 // @access  Private/Admin
 export const createGalleryItem = async (req, res) => {
   try {
-    const { title, category, type, url, tag, active, isLocal, fileName } = req.body;
+    const { title, category, type, url, tag, active, fileName } = req.body;
 
     let finalUrl = url || '';
     let publicId = '';
 
     // If file was uploaded via multipart/form-data
     if (req.file) {
+      // Check if Cloudinary credentials are missing
+      if (!isCloudinaryConfigured()) {
+        console.error('Gallery Upload Error: Cloudinary configuration is missing in environment variables.');
+        return res.status(500).json({
+          success: false,
+          message: 'Cloudinary configuration is missing'
+        });
+      }
+
       const mime = req.file.mimetype;
       const resourceType = mime.startsWith('video/') ? 'video' : 'image';
 
-      // Check if Cloudinary credentials are valid
-      const hasCloudinary = process.env.CLOUDINARY_CLOUD_NAME &&
-        process.env.CLOUDINARY_API_KEY &&
-        process.env.CLOUDINARY_API_KEY !== 'your_cloudinary_api_key';
-
-      if (hasCloudinary) {
-        try {
-          const cldResult = await uploadToCloudinary(req.file.buffer, mime, resourceType);
-          finalUrl = cldResult.secure_url;
-          publicId = cldResult.public_id;
-        } catch (cldErr) {
-          console.warn('Cloudinary upload error, falling back to disk storage:', cldErr.message);
-        }
-      }
-
-      // If Cloudinary is not used or failed, save file to local uploads directory
-      if (!finalUrl) {
-        const ext = path.extname(req.file.originalname) || (resourceType === 'video' ? '.mp4' : '.png');
-        const uniqueName = `media_${Date.now()}_${Math.round(Math.random() * 1E6)}${ext}`;
-        const filePath = path.join(uploadsDir, uniqueName);
-
-        fs.writeFileSync(filePath, req.file.buffer);
-
-        const protocol = req.protocol || 'http';
-        const host = req.get('host') || 'localhost:5000';
-        finalUrl = `${protocol}://${host}/uploads/${uniqueName}`;
+      // Cloudinary-only upload flow (no local disk fallback)
+      try {
+        const cldResult = await uploadToCloudinary(req.file.buffer, resourceType);
+        finalUrl = cldResult.secure_url;
+        publicId = cldResult.public_id;
+      } catch (cldErr) {
+        console.error('Detailed Cloudinary Upload Failure:', cldErr);
+        return res.status(500).json({
+          success: false,
+          message: `Cloudinary upload failed: ${cldErr.message || 'Upload stream error'}`
+        });
       }
     }
 
     if (!finalUrl && !req.file) {
-      return res.status(400).json({ success: false, message: 'Please select a file or provide a valid media URL' });
+      return res.status(400).json({
+        success: false,
+        message: 'Please select a file or provide a valid media URL'
+      });
     }
+
+    const detectedType = type || (req.file && req.file.mimetype.startsWith('video/') ? 'video' : 'photo');
 
     const newItem = await GalleryItem.create({
       title: title || (req.file ? req.file.originalname : 'Gallery Media'),
       category: category || 'Photos',
-      type: type || (req.file && req.file.mimetype.startsWith('video/') ? 'video' : 'photo'),
+      type: detectedType,
       url: finalUrl,
       publicId,
       tag: tag || '',
       active: active === 'false' ? false : Boolean(active),
-      isLocal: publicId ? false : (isLocal === 'true' || (req.file && finalUrl.includes('/uploads/'))),
+      isLocal: false,
       fileName: fileName || (req.file ? req.file.originalname : '')
     });
 
     res.status(201).json({
       success: true,
-      message: 'Media uploaded and saved successfully',
+      message: 'Media uploaded and saved to Cloudinary successfully',
       data: newItem
     });
   } catch (error) {
@@ -167,17 +163,27 @@ export const deleteGalleryItem = async (req, res) => {
     }
 
     // Delete from Cloudinary if publicId exists
-    if (item.publicId && process.env.CLOUDINARY_CLOUD_NAME) {
+    if (item.publicId && isCloudinaryConfigured()) {
       const resourceType = item.type === 'video' ? 'video' : 'image';
-      await cloudinary.uploader.destroy(item.publicId, { resource_type: resourceType }).catch(() => {});
+      try {
+        await cloudinary.uploader.destroy(item.publicId, { resource_type: resourceType });
+      } catch (cldDestroyErr) {
+        console.error(`Cloudinary deletion error for publicId (${item.publicId}):`, cldDestroyErr.message);
+      }
     }
 
-    // Delete local disk file if stored locally in uploads
+    // Legacy support: Delete local file ONLY IF existing record was stored in local /uploads/
     if (item.url && item.url.includes('/uploads/')) {
-      const filename = path.basename(item.url);
-      const filePath = path.join(uploadsDir, filename);
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
+      try {
+        const pathModule = await import('path');
+        const fsModule = await import('fs');
+        const filename = pathModule.basename(item.url);
+        const filePath = pathModule.join(process.cwd(), 'uploads', filename);
+        if (fsModule.existsSync(filePath)) {
+          fsModule.unlinkSync(filePath);
+        }
+      } catch (legacyErr) {
+        console.warn('Legacy file cleanup notice:', legacyErr.message);
       }
     }
 
