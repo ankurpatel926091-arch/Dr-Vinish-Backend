@@ -8,6 +8,7 @@ import adminRoutes from './routes/adminRoutes.js';
 import galleryRoutes from './routes/galleryRoutes.js';
 import blogRoutes from './routes/blogRoutes.js';
 import enquiryRoutes from './routes/enquiryRoutes.js';
+import appointmentRoutes from './routes/appointmentRoutes.js';
 import Admin from './models/Admin.js';
 import { seedGalleryItems } from './controllers/galleryController.js';
 import { seedBlogsIfEmpty } from './controllers/blogController.js';
@@ -34,6 +35,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/gallery', galleryRoutes);
 app.use('/api/blogs', blogRoutes);
 app.use('/api/enquiries', enquiryRoutes);
+app.use('/api/appointments', appointmentRoutes);
 
 // Health check endpoint
 app.get('/', (req, res) => {
