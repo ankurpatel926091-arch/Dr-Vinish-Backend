@@ -9,10 +9,12 @@ import galleryRoutes from './routes/galleryRoutes.js';
 import blogRoutes from './routes/blogRoutes.js';
 import enquiryRoutes from './routes/enquiryRoutes.js';
 import appointmentRoutes from './routes/appointmentRoutes.js';
+import clinicRoutes from './routes/clinicRoutes.js';
 import Admin from './models/Admin.js';
 import { seedGalleryItems } from './controllers/galleryController.js';
 import { seedBlogsIfEmpty } from './controllers/blogController.js';
 import { seedInitialEnquiries } from './controllers/enquiryController.js';
+import { seedInitialClinics } from './controllers/clinicController.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -36,6 +38,7 @@ app.use('/api/gallery', galleryRoutes);
 app.use('/api/blogs', blogRoutes);
 app.use('/api/enquiries', enquiryRoutes);
 app.use('/api/appointments', appointmentRoutes);
+app.use('/api/clinics', clinicRoutes);
 
 // Health check endpoint
 app.get('/', (req, res) => {
@@ -70,6 +73,7 @@ const startApp = async () => {
     await seedDefaultAdmin();
     await seedGalleryItems();
     await seedInitialEnquiries();
+    await seedInitialClinics();
   } catch (dbErr) {
     console.error('Warning: Server started without DB connection. Please configure MONGO_URI in Render environment variables.');
   }
