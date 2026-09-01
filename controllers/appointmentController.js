@@ -5,7 +5,7 @@ import Appointment from '../models/Appointment.js';
 // @access  Public
 export const createAppointment = async (req, res) => {
   try {
-    const { name, phone, centre, hospital, problem, service, date, time, preferredTime, message } = req.body;
+    const { name, phone, email, centre, hospital, problem, service, date, time, preferredTime, message } = req.body;
 
     if (!name || !phone) {
       return res.status(400).json({
@@ -21,6 +21,7 @@ export const createAppointment = async (req, res) => {
     const newAppointment = await Appointment.create({
       name: name.trim(),
       phone: phone.trim(),
+      email: email ? email.trim() : '',
       centre: appointmentCentre,
       problem: appointmentProblem,
       date: date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),

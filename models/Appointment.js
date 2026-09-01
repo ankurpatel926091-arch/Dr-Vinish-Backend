@@ -11,6 +11,11 @@ const appointmentSchema = new mongoose.Schema({
     required: [true, 'Phone number is required'],
     trim: true
   },
+  email: {
+    type: String,
+    default: '',
+    trim: true
+  },
   centre: {
     type: String,
     default: 'Rudraksh IVF & Urology Centre (Sharda Nagar)',
@@ -37,6 +42,11 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     enum: ['Pending', 'Confirmed', 'Missed', 'Cancelled'],
     default: 'Pending'
+  },
+  consultationType: {
+    type: String,
+    enum: ['First Visit', 'Follow-up'],
+    default: 'First Visit'
   }
 }, {
   timestamps: true
