@@ -44,6 +44,26 @@ export const createAppointment = async (req, res) => {
   }
 };
 
+// @desc    Get all confirmed appointments for public frontend slot disabling
+// @route   GET /api/appointments/public/confirmed-slots
+// @access  Public
+export const getConfirmedAppointments = async (req, res) => {
+  try {
+    const appointments = await Appointment.find({
+      status: { $regex: /^confirmed$/i }
+    }).select('centre date time status problem name phone');
+
+    res.status(200).json({
+      success: true,
+      count: appointments.length,
+      data: appointments
+    });
+  } catch (error) {
+    console.error('Get Confirmed Appointments Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // @desc    Get all appointments for Admin Panel
 // @route   GET /api/appointments/admin/all
 // @access  Private/Admin

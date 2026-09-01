@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   createAppointment,
+  getConfirmedAppointments,
   getAdminAppointments,
   updateAppointmentStatus,
   deleteAppointment
@@ -9,8 +10,9 @@ import { protectAdmin } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Public route for booking appointment from website
+// Public routes for booking appointment from website
 router.post('/', createAppointment);
+router.get('/public/confirmed-slots', getConfirmedAppointments);
 
 // Protected Admin routes
 router.get('/admin/all', protectAdmin, getAdminAppointments);
