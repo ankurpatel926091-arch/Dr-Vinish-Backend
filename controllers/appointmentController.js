@@ -1,4 +1,9 @@
 import Appointment from '../models/Appointment.js';
+import {
+  sendAppointmentConfirmationEmail,
+  sendAppointmentCancellationEmail,
+  sendAppointmentSubmissionEmail
+} from '../utils/emailService.js';
 
 // @desc    Create new appointment from website
 // @route   POST /api/appointments
@@ -30,6 +35,11 @@ export const createAppointment = async (req, res) => {
       status: 'Pending'
     });
 
+    // Send instant submission confirmation email asynchronously if email exists
+    sendAppointmentSubmissionEmail(newAppointment).catch(err => {
+      console.error('Async Submission Email Error:', err.message);
+    });
+
     res.status(201).json({
       success: true,
       message: 'Appointment booked successfully',
@@ -51,7 +61,7 @@ export const getConfirmedAppointments = async (req, res) => {
   try {
     const appointments = await Appointment.find({
       status: { $regex: /^confirmed$/i }
-    }).select('centre date time status problem name phone');
+    }).select('centre date time status problem name phone email');
 
     res.status(200).json({
       success: true,
@@ -81,29 +91,82 @@ export const getAdminAppointments = async (req, res) => {
   }
 };
 
-// @desc    Update appointment status
+// @desc    Update appointment status and send email notification
 // @route   PATCH /api/appointments/admin/:id/status
 // @access  Private/Admin
 export const updateAppointmentStatus = async (req, res) => {
   try {
-    const { status } = req.body;
-    const appointment = await Appointment.findById(req.params.id);
+    const { status, appointment } = req.body;
+    let targetApt = null;
 
-    if (!appointment) {
-      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    if (req.params.id && req.params.id.length === 24) {
+      targetApt = await Appointment.findById(req.params.id);
     }
 
-    if (status) {
-      appointment.status = status;
-      await appointment.save();
+    if (!targetApt && appointment) {
+      targetApt = appointment;
+    }
+
+    if (targetApt && status) {
+      if (typeof targetApt.save === 'function') {
+        targetApt.status = status;
+        await targetApt.save();
+      } else {
+        targetApt.status = status;
+      }
+
+      // Send Email Notification via Nodemailer
+      const statusLower = String(status).toLowerCase();
+      if (statusLower === 'confirmed') {
+        sendAppointmentConfirmationEmail(targetApt).catch(err => {
+          console.error('Async Confirmation Email Error:', err.message);
+        });
+      } else if (statusLower === 'cancelled') {
+        sendAppointmentCancellationEmail(targetApt).catch(err => {
+          console.error('Async Cancellation Email Error:', err.message);
+        });
+      }
     }
 
     res.status(200).json({
       success: true,
-      message: `Appointment status updated to ${appointment.status}`,
-      data: appointment
+      message: `Appointment status updated to ${status}`,
+      data: targetApt
     });
   } catch (error) {
+    console.error('Update Appointment Status Error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Direct endpoint to notify patient email for confirmation/cancellation
+// @route   POST /api/appointments/notify-email
+// @access  Public
+export const notifyAppointmentEmail = async (req, res) => {
+  try {
+    const { appointment, status } = req.body;
+    if (!appointment) {
+      return res.status(400).json({ success: false, message: 'Appointment data is required' });
+    }
+
+    const targetStatus = status || appointment.status || 'Confirmed';
+    const aptObj = { ...appointment, status: targetStatus };
+    const statusLower = String(targetStatus).toLowerCase();
+
+    let result = { success: false };
+    if (statusLower === 'confirmed') {
+      result = await sendAppointmentConfirmationEmail(aptObj);
+    } else if (statusLower === 'cancelled') {
+      result = await sendAppointmentCancellationEmail(aptObj);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Email notification processed for status: ${targetStatus}`,
+      result
+    });
+  } catch (error) {
+    console.error('Notify Email Error:', error.message);
     res.status(500).json({ success: false, message: error.message });
   }
 };
