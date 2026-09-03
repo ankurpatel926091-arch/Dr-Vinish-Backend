@@ -13,6 +13,7 @@ const router = express.Router();
 
 // Public routes for booking appointment from website
 router.post('/', createAppointment);
+router.get('/confirmed-slots', getConfirmedAppointments);
 router.get('/public/confirmed-slots', getConfirmedAppointments);
 router.post('/notify-email', notifyAppointmentEmail);
 
