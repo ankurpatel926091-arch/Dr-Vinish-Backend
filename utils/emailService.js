@@ -5,10 +5,15 @@ const createTransporter = () => {
   const pass = process.env.EMAIL_PASS || 'wqnriebjoefalymu';
 
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // use TLS / SSL
     auth: {
       user: user.trim(),
       pass: pass.replace(/\s+/g, '')
+    },
+    tls: {
+      rejectUnauthorized: false
     }
   });
 };
@@ -228,19 +233,16 @@ export const sendAppointmentCancellationEmail = async (appointment) => {
 export const sendAppointmentSubmissionEmail = async (appointment) => {
   try {
     const transporter = createTransporter();
-    const recipientEmail = extractAppointmentEmail(appointment);
-
-    if (!recipientEmail || !recipientEmail.includes('@')) {
-      console.warn(`No valid email found for appointment submission. Email notification skipped.`);
-      return { success: false, reason: 'No valid recipient email' };
-    }
+    const patientEmail = extractAppointmentEmail(appointment);
+    const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
+    const targetRecipient = (patientEmail && patientEmail.includes('@')) ? patientEmail : adminEmail;
 
     const doctorName = "Dr. Vinish Kumar Singh";
     const doctorTitle = "Senior Consultant Urologist & Laser Surgeon";
 
     const mailOptions = {
-      from: `"Dr. Vinish Kumar Singh Clinic" <${process.env.EMAIL_USER || 'ankurpatel926091@gmail.com'}>`,
-      to: recipientEmail,
+      from: `"Dr. Vinish Kumar Singh Clinic" <${adminEmail}>`,
+      to: targetRecipient,
       subject: `📩 Appointment Request Submitted Successfully - Dr. Vinish Kumar Singh Clinic`,
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
@@ -274,7 +276,7 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Registered Email:</td>
-                  <td style="padding: 9px 6px; color: #103F7C; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-all; word-wrap: break-word; overflow-wrap: anywhere;">${recipientEmail}</td>
+                  <td style="padding: 9px 6px; color: #103F7C; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-all; word-wrap: break-word; overflow-wrap: anywhere;">${targetRecipient}</td>
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Phone Number:</td>
@@ -321,12 +323,15 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
             <p style="margin: 0 0 4px 0;">Dr. Vinish Kumar Singh • Senior Urologist & Andrologist • Lucknow</p>
             <p style="margin: 0;">This is an automated appointment request submission acknowledgement email.</p>
           </div>
-        </div>
       `
     };
 
+    if (targetRecipient !== adminEmail) {
+      mailOptions.bcc = adminEmail;
+    }
+
     const info = await transporter.sendMail(mailOptions);
-    console.log(`Submission confirmation email sent successfully to ${recipientEmail}:`, info.messageId);
+    console.log(`Submission confirmation email sent successfully to ${targetRecipient}:`, info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('Error sending submission email via nodemailer:', error.message);

@@ -35,15 +35,20 @@ export const createAppointment = async (req, res) => {
       status: 'Pending'
     });
 
-    // Send instant submission confirmation email asynchronously if email exists
-    sendAppointmentSubmissionEmail(newAppointment).catch(err => {
+    let emailResult = null;
+    try {
+      emailResult = await sendAppointmentSubmissionEmail(newAppointment);
+      console.log('Submission Email Status:', emailResult);
+    } catch (err) {
       console.error('Async Submission Email Error:', err.message);
-    });
+      emailResult = { success: false, error: err.message };
+    }
 
     res.status(201).json({
       success: true,
       message: 'Appointment booked successfully',
-      data: newAppointment
+      data: newAppointment,
+      emailResult
     });
   } catch (error) {
     console.error('Create Appointment Error:', error.message);
@@ -118,13 +123,17 @@ export const updateAppointmentStatus = async (req, res) => {
       // Send Email Notification via Nodemailer
       const statusLower = String(status).toLowerCase();
       if (statusLower === 'confirmed') {
-        sendAppointmentConfirmationEmail(targetApt).catch(err => {
+        try {
+          await sendAppointmentConfirmationEmail(targetApt);
+        } catch (err) {
           console.error('Async Confirmation Email Error:', err.message);
-        });
+        }
       } else if (statusLower === 'cancelled') {
-        sendAppointmentCancellationEmail(targetApt).catch(err => {
+        try {
+          await sendAppointmentCancellationEmail(targetApt);
+        } catch (err) {
           console.error('Async Cancellation Email Error:', err.message);
-        });
+        }
       }
     }
 
@@ -158,6 +167,8 @@ export const notifyAppointmentEmail = async (req, res) => {
       result = await sendAppointmentConfirmationEmail(aptObj);
     } else if (statusLower === 'cancelled') {
       result = await sendAppointmentCancellationEmail(aptObj);
+    } else {
+      result = await sendAppointmentSubmissionEmail(aptObj);
     }
 
     res.status(200).json({
