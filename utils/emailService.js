@@ -1,19 +1,51 @@
 import nodemailer from 'nodemailer';
 
-const createTransporter = () => {
-  const user = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
-  const pass = (process.env.EMAIL_PASS || 'wqnriebjoefalymu').replace(/\s+/g, '');
+const createTransporter = (port = 587) => {
+  const user = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim().replace(/['"]/g, '');
+  const pass = (process.env.EMAIL_PASS || 'wqnriebjoefalymu').replace(/\s+/g, '').replace(/['"]/g, '');
+
+  if (port === 465) {
+    return nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user, pass },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000
+    });
+  }
 
   return nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user,
-      pass
-    },
-    tls: {
-      rejectUnauthorized: false
-    }
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    requireTLS: true,
+    auth: { user, pass },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000
   });
+};
+
+const sendMailWithFallback = async (mailOptions) => {
+  try {
+    const transporter587 = createTransporter(587);
+    const info = await transporter587.sendMail(mailOptions);
+    return { success: true, messageId: info.messageId, port: 587 };
+  } catch (err587) {
+    console.warn('Port 587 Gmail SMTP attempt failed:', err587.message, 'Trying Port 465 fallback...');
+    try {
+      const transporter465 = createTransporter(465);
+      const info = await transporter465.sendMail(mailOptions);
+      return { success: true, messageId: info.messageId, port: 465 };
+    } catch (err465) {
+      console.error('Port 465 Gmail SMTP attempt failed:', err465.message);
+      return { success: false, error: err465.message };
+    }
+  }
 };
 
 // Helper to extract email if embedded in message
@@ -33,9 +65,8 @@ export const extractAppointmentEmail = (appointment) => {
 // 1. Send Appointment Confirmation Email
 export const sendAppointmentConfirmationEmail = async (appointment) => {
   try {
-    const transporter = createTransporter();
     const patientEmail = extractAppointmentEmail(appointment);
-    const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
+    const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim().replace(/['"]/g, '');
     const recipientsList = [adminEmail];
     if (patientEmail && patientEmail.includes('@') && patientEmail.toLowerCase() !== adminEmail.toLowerCase()) {
       recipientsList.unshift(patientEmail);
@@ -130,9 +161,11 @@ export const sendAppointmentConfirmationEmail = async (appointment) => {
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Confirmation email sent successfully to ${recipientsStr}:`, info.messageId);
-    return { success: true, messageId: info.messageId };
+    const res = await sendMailWithFallback(mailOptions);
+    if (res.success) {
+      console.log(`Confirmation email sent successfully via Port ${res.port} to ${recipientsStr}:`, res.messageId);
+    }
+    return res;
   } catch (error) {
     console.error('Error sending confirmation email via nodemailer:', error.message);
     return { success: false, error: error.message };
@@ -142,9 +175,8 @@ export const sendAppointmentConfirmationEmail = async (appointment) => {
 // 2. Send Appointment Cancellation Email
 export const sendAppointmentCancellationEmail = async (appointment) => {
   try {
-    const transporter = createTransporter();
     const patientEmail = extractAppointmentEmail(appointment);
-    const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
+    const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim().replace(/['"]/g, '');
     const recipientsList = [adminEmail];
     if (patientEmail && patientEmail.includes('@') && patientEmail.toLowerCase() !== adminEmail.toLowerCase()) {
       recipientsList.unshift(patientEmail);
@@ -220,9 +252,11 @@ export const sendAppointmentCancellationEmail = async (appointment) => {
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Cancellation email sent successfully to ${recipientsStr}:`, info.messageId);
-    return { success: true, messageId: info.messageId };
+    const res = await sendMailWithFallback(mailOptions);
+    if (res.success) {
+      console.log(`Cancellation email sent successfully via Port ${res.port} to ${recipientsStr}:`, res.messageId);
+    }
+    return res;
   } catch (error) {
     console.error('Error sending cancellation email via nodemailer:', error.message);
     return { success: false, error: error.message };
@@ -232,9 +266,8 @@ export const sendAppointmentCancellationEmail = async (appointment) => {
 // 3. Send Appointment Submission Received Email (Instant notification upon booking)
 export const sendAppointmentSubmissionEmail = async (appointment) => {
   try {
-    const transporter = createTransporter();
     const patientEmail = extractAppointmentEmail(appointment);
-    const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
+    const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim().replace(/['"]/g, '');
     const recipientsList = [adminEmail];
     if (patientEmail && patientEmail.includes('@') && patientEmail.toLowerCase() !== adminEmail.toLowerCase()) {
       recipientsList.unshift(patientEmail);
@@ -280,7 +313,7 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Registered Email:</td>
-                  <td style="padding: 9px 6px; color: #103F7C; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-all; word-wrap: break-word; overflow-wrap: anywhere;">${targetRecipient}</td>
+                  <td style="padding: 9px 6px; color: #103F7C; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-all; word-wrap: break-word; overflow-wrap: anywhere;">${recipientsStr}</td>
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Phone Number:</td>
@@ -304,7 +337,7 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; word-break: break-word; overflow-wrap: break-word;">Status:</td>
-                  <td style="padding: 9px 6px; color: #d97706; font-weight: 800; width: 62%; vertical-align: top; word-break: break-word; overflow-wrap: anywhere;">Pending Confirmation</td>
+                  <td style="padding: 9px 6px; color: #d97706; font-weight: 800; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: anywhere;">Pending Confirmation</td>
                 </tr>
               </table>
             </div>
@@ -327,12 +360,15 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
             <p style="margin: 0 0 4px 0;">Dr. Vinish Kumar Singh • Senior Urologist & Andrologist • Lucknow</p>
             <p style="margin: 0;">This is an automated appointment request submission acknowledgement email.</p>
           </div>
+        </div>
       `
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`Submission confirmation email sent successfully to ${recipientsStr}:`, info.messageId);
-    return { success: true, messageId: info.messageId };
+    const res = await sendMailWithFallback(mailOptions);
+    if (res.success) {
+      console.log(`Submission confirmation email sent successfully via Port ${res.port} to ${recipientsStr}:`, res.messageId);
+    }
+    return res;
   } catch (error) {
     console.error('Error sending submission email via nodemailer:', error.message);
     return { success: false, error: error.message };
