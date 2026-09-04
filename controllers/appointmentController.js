@@ -99,16 +99,20 @@ export const createAppointment = async (req, res) => {
       status: 'Pending'
     });
 
-    // Send submission email in background (non-blocking for instant UI response)
-    sendAppointmentSubmissionEmail(newAppointment)
-      .then((emailResult) => console.log('Submission Email Status:', emailResult))
-      .catch((err) => console.error('Async Submission Email Error:', err.message));
+    let emailResult = null;
+    try {
+      emailResult = await sendAppointmentSubmissionEmail(newAppointment);
+      console.log('Submission Email Status:', emailResult);
+    } catch (err) {
+      console.error('Submission Email Error:', err.message);
+      emailResult = { success: false, error: err.message };
+    }
 
     res.status(201).json({
       success: true,
       message: 'Appointment booked successfully',
       data: newAppointment,
-      emailResult: { success: true }
+      emailResult
     });
   } catch (error) {
     console.error('Create Appointment Error:', error.message);

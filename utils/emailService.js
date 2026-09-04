@@ -1,21 +1,33 @@
 import nodemailer from 'nodemailer';
 
-const createTransporter = () => {
-  const user = process.env.EMAIL_USER || 'ankurpatel926091@gmail.com';
-  const pass = process.env.EMAIL_PASS || 'wqnriebjoefalymu';
+const getTransporterConfig = () => {
+  const user = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
+  const pass = (process.env.EMAIL_PASS || 'wqnriebjoefalymu').replace(/\s+/g, '');
 
-  return nodemailer.createTransport({
+  return {
     host: 'smtp.gmail.com',
     port: 465,
-    secure: true, // use TLS / SSL
+    secure: true,
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
     auth: {
-      user: user.trim(),
-      pass: pass.replace(/\s+/g, '')
+      user,
+      pass
     },
     tls: {
       rejectUnauthorized: false
     }
-  });
+  };
+};
+
+let cachedTransporter = nodemailer.createTransport(getTransporterConfig());
+
+const createTransporter = () => {
+  if (!cachedTransporter) {
+    cachedTransporter = nodemailer.createTransport(getTransporterConfig());
+  }
+  return cachedTransporter;
 };
 
 // Helper to extract email if embedded in message
