@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 
+// Create Nodemailer Transporter with strict 5-second connection timeout
 const createTransporter = (port = 587) => {
   const user = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim().replace(/['"]/g, '');
   const pass = (process.env.EMAIL_PASS || 'wqnriebjoefalymu').replace(/\s+/g, '').replace(/['"]/g, '');
@@ -11,9 +12,9 @@ const createTransporter = (port = 587) => {
       secure: true,
       auth: { user, pass },
       tls: { rejectUnauthorized: false },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 5000
     });
   }
 
@@ -24,25 +25,72 @@ const createTransporter = (port = 587) => {
     requireTLS: true,
     auth: { user, pass },
     tls: { rejectUnauthorized: false },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 10000
+    connectionTimeout: 5000,
+    greetingTimeout: 5000,
+    socketTimeout: 5000
   });
 };
 
+// Send email via Resend HTTPS REST API (Port 443 - Immune to cloud SMTP port blocks)
+const sendViaResend = async (mailOptions) => {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return { success: false, reason: 'No RESEND_API_KEY configured' };
+  }
+
+  try {
+    const toArray = String(mailOptions.to).split(',').map(s => s.trim()).filter(Boolean);
+    const fromAddr = process.env.RESEND_FROM_EMAIL || 'Dr. Vinish Clinic <onboarding@resend.dev>';
+
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey.trim()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: fromAddr,
+        to: toArray,
+        subject: mailOptions.subject,
+        html: mailOptions.html
+      })
+    });
+
+    const data = await res.json();
+    if (res.ok && data && data.id) {
+      console.log('Email sent successfully via Resend HTTPS REST API:', data.id);
+      return { success: true, messageId: data.id, provider: 'Resend REST API' };
+    }
+    console.warn('Resend HTTPS API warning:', data);
+    return { success: false, error: data.message || 'Resend error' };
+  } catch (err) {
+    console.error('Resend HTTPS API error:', err.message);
+    return { success: false, error: err.message };
+  }
+};
+
+// Robust Unified Email Sender: Tries Resend HTTPS REST API first, then Nodemailer SMTP Port 587, then Port 465
 const sendMailWithFallback = async (mailOptions) => {
+  // 1. Try Resend HTTPS REST API if RESEND_API_KEY is configured
+  if (process.env.RESEND_API_KEY) {
+    const resendResult = await sendViaResend(mailOptions);
+    if (resendResult.success) return resendResult;
+  }
+
+  // 2. Fallback to Nodemailer SMTP Port 587 (STARTTLS)
   try {
     const transporter587 = createTransporter(587);
     const info = await transporter587.sendMail(mailOptions);
-    return { success: true, messageId: info.messageId, port: 587 };
+    return { success: true, messageId: info.messageId, port: 587, provider: 'Nodemailer SMTP (587)' };
   } catch (err587) {
-    console.warn('Port 587 Gmail SMTP attempt failed:', err587.message, 'Trying Port 465 fallback...');
+    console.warn('Port 587 Gmail SMTP failed:', err587.message, 'Trying Port 465 fallback...');
+    // 3. Fallback to Nodemailer SMTP Port 465 (SSL)
     try {
       const transporter465 = createTransporter(465);
       const info = await transporter465.sendMail(mailOptions);
-      return { success: true, messageId: info.messageId, port: 465 };
+      return { success: true, messageId: info.messageId, port: 465, provider: 'Nodemailer SMTP (465)' };
     } catch (err465) {
-      console.error('Port 465 Gmail SMTP attempt failed:', err465.message);
+      console.error('Port 465 Gmail SMTP failed:', err465.message);
       return { success: false, error: err465.message };
     }
   }
@@ -163,7 +211,7 @@ export const sendAppointmentConfirmationEmail = async (appointment) => {
 
     const res = await sendMailWithFallback(mailOptions);
     if (res.success) {
-      console.log(`Confirmation email sent successfully via Port ${res.port} to ${recipientsStr}:`, res.messageId);
+      console.log(`Confirmation email sent successfully via ${res.provider} to ${recipientsStr}:`, res.messageId);
     }
     return res;
   } catch (error) {
@@ -254,7 +302,7 @@ export const sendAppointmentCancellationEmail = async (appointment) => {
 
     const res = await sendMailWithFallback(mailOptions);
     if (res.success) {
-      console.log(`Cancellation email sent successfully via Port ${res.port} to ${recipientsStr}:`, res.messageId);
+      console.log(`Cancellation email sent successfully via ${res.provider} to ${recipientsStr}:`, res.messageId);
     }
     return res;
   } catch (error) {
@@ -366,7 +414,7 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
 
     const res = await sendMailWithFallback(mailOptions);
     if (res.success) {
-      console.log(`Submission confirmation email sent successfully via Port ${res.port} to ${recipientsStr}:`, res.messageId);
+      console.log(`Submission confirmation email sent successfully via ${res.provider} to ${recipientsStr}:`, res.messageId);
     }
     return res;
   } catch (error) {
