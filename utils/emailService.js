@@ -34,19 +34,20 @@ export const extractAppointmentEmail = (appointment) => {
 export const sendAppointmentConfirmationEmail = async (appointment) => {
   try {
     const transporter = createTransporter();
-    const recipientEmail = extractAppointmentEmail(appointment);
-
-    if (!recipientEmail || !recipientEmail.includes('@')) {
-      console.warn(`No valid email found for appointment. Email notification skipped.`);
-      return { success: false, reason: 'No valid recipient email' };
+    const patientEmail = extractAppointmentEmail(appointment);
+    const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
+    const recipientsList = [adminEmail];
+    if (patientEmail && patientEmail.includes('@') && patientEmail.toLowerCase() !== adminEmail.toLowerCase()) {
+      recipientsList.unshift(patientEmail);
     }
+    const recipientsStr = recipientsList.join(', ');
 
     const doctorName = "Dr. Vinish Kumar Singh";
     const doctorTitle = "Senior Consultant Urologist & Laser Surgeon";
 
     const mailOptions = {
-      from: `"Dr. Vinish Kumar Singh Clinic" <${process.env.EMAIL_USER || 'ankurpatel926091@gmail.com'}>`,
-      to: recipientEmail,
+      from: `"Dr. Vinish Kumar Singh Clinic" <${adminEmail}>`,
+      to: recipientsStr,
       subject: `✅ Appointment Confirmed - Dr. Vinish Kumar Singh Clinic`,
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
@@ -130,7 +131,7 @@ export const sendAppointmentConfirmationEmail = async (appointment) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log(`Confirmation email sent successfully to ${recipientEmail}:`, info.messageId);
+    console.log(`Confirmation email sent successfully to ${recipientsStr}:`, info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('Error sending confirmation email via nodemailer:', error.message);
@@ -142,18 +143,19 @@ export const sendAppointmentConfirmationEmail = async (appointment) => {
 export const sendAppointmentCancellationEmail = async (appointment) => {
   try {
     const transporter = createTransporter();
-    const recipientEmail = extractAppointmentEmail(appointment);
-
-    if (!recipientEmail || !recipientEmail.includes('@')) {
-      console.warn(`No valid email found for appointment. Email notification skipped.`);
-      return { success: false, reason: 'No valid recipient email' };
+    const patientEmail = extractAppointmentEmail(appointment);
+    const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
+    const recipientsList = [adminEmail];
+    if (patientEmail && patientEmail.includes('@') && patientEmail.toLowerCase() !== adminEmail.toLowerCase()) {
+      recipientsList.unshift(patientEmail);
     }
+    const recipientsStr = recipientsList.join(', ');
 
     const doctorName = "Dr. Vinish Kumar Singh";
 
     const mailOptions = {
-      from: `"Dr. Vinish Kumar Singh Clinic" <${process.env.EMAIL_USER || 'ankurpatel926091@gmail.com'}>`,
-      to: recipientEmail,
+      from: `"Dr. Vinish Kumar Singh Clinic" <${adminEmail}>`,
+      to: recipientsStr,
       subject: `❌ Appointment Status Update: Cancelled - Dr. Vinish Kumar Singh Clinic`,
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
@@ -219,7 +221,7 @@ export const sendAppointmentCancellationEmail = async (appointment) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log(`Cancellation email sent successfully to ${recipientEmail}:`, info.messageId);
+    console.log(`Cancellation email sent successfully to ${recipientsStr}:`, info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('Error sending cancellation email via nodemailer:', error.message);
