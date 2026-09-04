@@ -5,6 +5,55 @@ import {
   sendAppointmentSubmissionEmail
 } from '../utils/emailService.js';
 
+const parseTimeToMinutes = (timeStr) => {
+  if (!timeStr) return -1;
+  const match = String(timeStr).trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return -1;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const modifier = match[3].toUpperCase();
+
+  if (modifier === 'PM' && hours < 12) hours += 12;
+  if (modifier === 'AM' && hours === 12) hours = 0;
+
+  return hours * 60 + minutes;
+};
+
+const isTodayDateBackend = (dateStr) => {
+  if (!dateStr) return false;
+  try {
+    const today = new Date();
+    const todayY = today.getFullYear();
+    const todayM = String(today.getMonth() + 1).padStart(2, '0');
+    const todayD = String(today.getDate()).padStart(2, '0');
+    const todayFormatted = `${todayY}-${todayM}-${todayD}`;
+
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      if (`${y}-${m}-${day}` === todayFormatted) return true;
+    }
+
+    const cleanStr = String(dateStr).trim().replace(/-/g, ' ');
+    const parts = cleanStr.split(/\s+/);
+    if (parts.length >= 3) {
+      const day = parts[0].padStart(2, '0');
+      const monthMap = {
+        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+        jul: '07', aug: '08', sep: '09', sept: '09', oct: '10', nov: '11', dec: '12'
+      };
+      const monthKey = parts[1].toLowerCase().slice(0, 4);
+      const month = monthMap[monthKey] || monthMap[monthKey.slice(0, 3)];
+      const year = parts[2];
+      if (`${year}-${month}-${day}` === todayFormatted) return true;
+    }
+  } catch (e) {}
+
+  return false;
+};
+
 // @desc    Create new appointment from website
 // @route   POST /api/appointments
 // @access  Public
@@ -22,6 +71,21 @@ export const createAppointment = async (req, res) => {
     const appointmentCentre = centre || hospital || 'Rudraksh IVF & Urology Centre (Sharda Nagar)';
     const appointmentProblem = problem || service || 'General Urology Consultation';
     const appointmentTime = time || preferredTime || '11:00 AM';
+
+    // Backend Past Slot Validation for Today's Date
+    if (date && isTodayDateBackend(date)) {
+      const slotMin = parseTimeToMinutes(appointmentTime);
+      if (slotMin !== -1) {
+        const now = new Date();
+        const currentMin = now.getHours() * 60 + now.getMinutes();
+        if (slotMin <= currentMin) {
+          return res.status(400).json({
+            success: false,
+            message: 'Selected time slot has already passed for today. Please select a future time slot.'
+          });
+        }
+      }
+    }
 
     const newAppointment = await Appointment.create({
       name: name.trim(),
