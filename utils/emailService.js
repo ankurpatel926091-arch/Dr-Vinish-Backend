@@ -1,16 +1,11 @@
 import nodemailer from 'nodemailer';
 
-const getTransporterConfig = () => {
+const createTransporter = () => {
   const user = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
   const pass = (process.env.EMAIL_PASS || 'wqnriebjoefalymu').replace(/\s+/g, '');
 
-  return {
-    host: 'smtp.gmail.com',
-    port: 465,
-    secure: true,
-    pool: true,
-    maxConnections: 5,
-    maxMessages: 100,
+  return nodemailer.createTransport({
+    service: 'gmail',
     auth: {
       user,
       pass
@@ -18,16 +13,7 @@ const getTransporterConfig = () => {
     tls: {
       rejectUnauthorized: false
     }
-  };
-};
-
-let cachedTransporter = nodemailer.createTransport(getTransporterConfig());
-
-const createTransporter = () => {
-  if (!cachedTransporter) {
-    cachedTransporter = nodemailer.createTransport(getTransporterConfig());
-  }
-  return cachedTransporter;
+  });
 };
 
 // Helper to extract email if embedded in message
@@ -247,14 +233,18 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
     const transporter = createTransporter();
     const patientEmail = extractAppointmentEmail(appointment);
     const adminEmail = (process.env.EMAIL_USER || 'ankurpatel926091@gmail.com').trim();
-    const targetRecipient = (patientEmail && patientEmail.includes('@')) ? patientEmail : adminEmail;
+    const recipientsList = [adminEmail];
+    if (patientEmail && patientEmail.includes('@') && patientEmail.toLowerCase() !== adminEmail.toLowerCase()) {
+      recipientsList.unshift(patientEmail);
+    }
+    const recipientsStr = recipientsList.join(', ');
 
     const doctorName = "Dr. Vinish Kumar Singh";
     const doctorTitle = "Senior Consultant Urologist & Laser Surgeon";
 
     const mailOptions = {
       from: `"Dr. Vinish Kumar Singh Clinic" <${adminEmail}>`,
-      to: targetRecipient,
+      to: recipientsStr,
       subject: `📩 Appointment Request Submitted Successfully - Dr. Vinish Kumar Singh Clinic`,
       html: `
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; width: 100%; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; border: 1px solid #e2e8f0; color: #1e293b;">
@@ -338,12 +328,8 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
       `
     };
 
-    if (targetRecipient !== adminEmail) {
-      mailOptions.bcc = adminEmail;
-    }
-
     const info = await transporter.sendMail(mailOptions);
-    console.log(`Submission confirmation email sent successfully to ${targetRecipient}:`, info.messageId);
+    console.log(`Submission confirmation email sent successfully to ${recipientsStr}:`, info.messageId);
     return { success: true, messageId: info.messageId };
   } catch (error) {
     console.error('Error sending submission email via nodemailer:', error.message);
