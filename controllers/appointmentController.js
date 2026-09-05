@@ -177,6 +177,13 @@ export const updateAppointmentStatus = async (req, res) => {
     }
 
     if (targetApt && status) {
+      if ((targetApt.status || '').toLowerCase() === 'visited') {
+        return res.status(400).json({
+          success: false,
+          message: 'Appointment has already been marked as Visited and cannot be modified further.'
+        });
+      }
+
       if (typeof targetApt.save === 'function') {
         targetApt.status = status;
         await targetApt.save();
