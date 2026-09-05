@@ -125,7 +125,7 @@ export const createAppointment = async (req, res) => {
 export const getConfirmedAppointments = async (req, res) => {
   try {
     const appointments = await Appointment.find({
-      status: { $regex: /^confirmed$/i }
+      status: { $nin: ['Cancelled', 'cancelled', 'Canceled', 'canceled', 'Rejected', 'rejected'] }
     }).select('centre date time status problem name phone email');
 
     res.status(200).json({
