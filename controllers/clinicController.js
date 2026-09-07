@@ -9,7 +9,7 @@ export const initialClinics = [
     badgeLabel: 'MORNING CONSULTATION CENTRE',
     city: 'Sharda Nagar, Lucknow',
     address: '1/795, Ratan Khand, Sharda Nagar, Lucknow, UP 226002',
-    phone: '+91 89600 68307',
+    phone: '+91 72759 81480',
     timings: '10:00 AM – 03:00 PM',
     image: 'https://images.unsplash.com/photo-1586773860418-d37222d8fce3?auto=format&fit=crop&q=80&w=800',
     mapUrl: 'https://www.google.com/maps?q=Rudraksh+IVF+And+Urology+Centre+Lucknow',

@@ -196,7 +196,7 @@ export const sendAppointmentConfirmationEmail = async (appointment) => {
             </div>
 
             <p style="font-size: 12px; color: #64748b; text-align: center; margin: 0;">
-              Need help or directions? Call us at <strong>+91 89600 68307</strong> / <strong>+91 86048 91955</strong>
+              Need help or directions? Call us at <strong>+91 72759 81480</strong> / <strong>+91 86048 91955</strong>
             </p>
           </div>
 
@@ -287,7 +287,7 @@ export const sendAppointmentCancellationEmail = async (appointment) => {
             </p>
 
             <p style="font-size: 12px; color: #64748b; text-align: center; margin: 0;">
-              Need help? Call us at <strong>+91 89600 68307</strong> / <strong>+91 86048 91955</strong>
+              Need help? Call us at <strong>+91 72759 81480</strong> / <strong>+91 86048 91955</strong>
             </p>
           </div>
 
@@ -399,7 +399,7 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
             </div>
 
             <p style="font-size: 12px; color: #64748b; text-align: center; margin: 0;">
-              Need help? Call us at <strong>+91 89600 68307</strong> / <strong>+91 86048 91955</strong>
+              Need help? Call us at <strong>+91 72759 81480</strong> / <strong>+91 86048 91955</strong>
             </p>
           </div>
 
