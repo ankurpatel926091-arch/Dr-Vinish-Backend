@@ -164,7 +164,7 @@ export const sendAppointmentConfirmationEmail = async (appointment) => {
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Centre / Hospital:</td>
-                  <td style="padding: 9px 6px; color: #103F7C; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; word-wrap: break-word; overflow-wrap: anywhere;">${appointment.centre || appointment.hospital}</td>
+                  <td style="padding: 9px 6px; color: #103F7C; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; word-wrap: break-word; overflow-wrap: anywhere;">${appointment.clinic?.name || appointment.centre || appointment.hospital || 'Clinic'}</td>
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Confirmed Date:</td>
@@ -257,7 +257,7 @@ export const sendAppointmentCancellationEmail = async (appointment) => {
               Dear <strong>${appointment.name}</strong>,
             </p>
             <p style="font-size: 13px; line-height: 1.5; color: #475569; margin-bottom: 20px;">
-              This email is to inform you that your appointment request for <strong>${appointment.date}</strong> at <strong>${appointment.time}</strong> at <strong>${appointment.centre || appointment.hospital}</strong> has been <strong>Cancelled</strong>.
+              This email is to inform you that your appointment request for <strong>${appointment.date}</strong> at <strong>${appointment.time}</strong> at <strong>${appointment.clinic?.name || appointment.centre || appointment.hospital || 'Clinic'}</strong> has been <strong>Cancelled</strong>.
             </p>
 
             <!-- Details Box -->
@@ -269,7 +269,7 @@ export const sendAppointmentCancellationEmail = async (appointment) => {
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Centre / Hospital:</td>
-                  <td style="padding: 9px 6px; color: #0f172a; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; word-wrap: break-word; overflow-wrap: anywhere;">${appointment.centre || appointment.hospital}</td>
+                  <td style="padding: 9px 6px; color: #0f172a; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; word-wrap: break-word; overflow-wrap: anywhere;">${appointment.clinic?.name || appointment.centre || appointment.hospital || 'Clinic'}</td>
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Date & Time:</td>
@@ -369,7 +369,7 @@ export const sendAppointmentSubmissionEmail = async (appointment) => {
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Centre / Hospital:</td>
-                  <td style="padding: 9px 6px; color: #103F7C; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; word-wrap: break-word; overflow-wrap: anywhere;">${appointment.centre || appointment.hospital}</td>
+                  <td style="padding: 9px 6px; color: #103F7C; font-weight: 700; width: 62%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; word-wrap: break-word; overflow-wrap: anywhere;">${appointment.clinic?.name || appointment.centre || appointment.hospital || 'Clinic'}</td>
                 </tr>
                 <tr>
                   <td style="padding: 9px 6px; color: #64748b; font-weight: 600; width: 38%; vertical-align: top; border-bottom: 1px solid #e2e8f0; word-break: break-word; overflow-wrap: break-word;">Requested Date:</td>

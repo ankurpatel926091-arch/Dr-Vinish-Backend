@@ -3,9 +3,10 @@ import Admin from '../models/Admin.js';
 import cloudinary from '../config/cloudinary.js';
 
 // Helper: Generate JWT Token
-const generateToken = (id) => {
+const generateToken = (id, role) => {
+  const normalizedRole = (role === 'Administrator' || role === 'admin') ? 'admin' : 'doctor';
   return jwt.sign(
-    { id },
+    { id, role: normalizedRole },
     process.env.JWT_SECRET || 'dr_vinish_admin_jwt_secret_key_2026_secure',
     { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
   );
@@ -30,23 +31,25 @@ export const registerAdmin = async (req, res) => {
     if (adminExists) {
       return res.status(400).json({
         success: false,
-        message: 'Admin with this email already exists'
+        message: 'Account with this email already exists'
       });
     }
+
+    const assignedRole = (role && (role.toLowerCase() === 'doctor' || role === 'doctor')) ? 'doctor' : 'admin';
 
     // Create new admin
     const admin = await Admin.create({
       name,
       email: email.toLowerCase().trim(),
       password, // Password hashed automatically by Admin model pre-save hook
-      role: role || 'Administrator'
+      role: assignedRole
     });
 
     if (admin) {
-      const token = generateToken(admin._id);
+      const token = generateToken(admin._id, admin.role);
       return res.status(201).json({
         success: true,
-        message: 'Admin account created successfully',
+        message: 'Account created successfully',
         token,
         admin: {
           id: admin._id,
@@ -59,14 +62,14 @@ export const registerAdmin = async (req, res) => {
     } else {
       return res.status(400).json({
         success: false,
-        message: 'Invalid admin data'
+        message: 'Invalid user data'
       });
     }
   } catch (error) {
     console.error('Register Error:', error.message);
     return res.status(500).json({
       success: false,
-      message: 'Server error during admin registration'
+      message: 'Server error during registration'
     });
   }
 };
@@ -88,7 +91,13 @@ export const loginAdmin = async (req, res) => {
     const admin = await Admin.findOne({ email: email.toLowerCase().trim() });
 
     if (admin && (await admin.matchPassword(password))) {
-      const token = generateToken(admin._id);
+      const normalizedRole = (admin.role === 'Administrator' || admin.role === 'admin') ? 'admin' : 'doctor';
+      if (admin.role !== normalizedRole) {
+        admin.role = normalizedRole;
+        await admin.save();
+      }
+
+      const token = generateToken(admin._id, normalizedRole);
 
       return res.status(200).json({
         success: true,
@@ -98,7 +107,7 @@ export const loginAdmin = async (req, res) => {
           id: admin._id,
           name: admin.name,
           email: admin.email,
-          role: admin.role,
+          role: normalizedRole,
           createdAt: admin.createdAt
         }
       });
@@ -123,13 +132,14 @@ export const loginAdmin = async (req, res) => {
 export const getMe = async (req, res) => {
   try {
     const admin = req.admin;
+    const normalizedRole = (admin.role === 'Administrator' || admin.role === 'admin') ? 'admin' : 'doctor';
     return res.status(200).json({
       success: true,
       admin: {
         id: admin._id,
         name: admin.name,
         email: admin.email,
-        role: admin.role,
+        role: normalizedRole,
         createdAt: admin.createdAt
       }
     });

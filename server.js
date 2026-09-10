@@ -54,18 +54,35 @@ app.get('/', (req, res) => {
 // Seed default Admin if no admin exists
 const seedDefaultAdmin = async () => {
   try {
-    const adminCount = await Admin.countDocuments();
-    if (adminCount === 0) {
+    const adminExists = await Admin.findOne({ email: 'admin@drvinish.com' });
+    if (!adminExists) {
       await Admin.create({
         name: 'Dr. Vinish Kumar Singh',
         email: 'admin@drvinish.com',
-        password: 'admin123', // Will be hashed by pre-save hook
-        role: 'Administrator'
+        password: 'admin123',
+        role: 'admin'
       });
       console.log('Default Admin Account Created: admin@drvinish.com / admin123');
     }
   } catch (error) {
     console.error('Error seeding default admin:', error.message);
+  }
+};
+
+const seedDefaultdoctor = async () => {
+  try {
+    const doctorExists = await Admin.findOne({ email: 'doctor@drvinish.com' });
+    if (!doctorExists) {
+      await Admin.create({
+        name: 'Dr. Vinish Kumar Singh',
+        email: 'doctor@drvinish.com',
+        password: 'doctor123',
+        role: 'doctor'
+      });
+      console.log('Default Doctor Account Created: doctor@drvinish.com / doctor123');
+    }
+  } catch (error) {
+    console.error('Error seeding default doctor:', error.message);
   }
 };
 
@@ -75,10 +92,8 @@ const PORT = process.env.PORT || 5000;
 const startApp = async () => {
   try {
     await connectDB();
-    await seedBlogsIfEmpty();
     await seedDefaultAdmin();
-    await seedGalleryItems();
-    await seedInitialEnquiries();
+    await seedDefaultdoctor();
     await seedInitialClinics();
   } catch (dbErr) {
     console.error('Warning: Server started without DB connection. Please configure MONGO_URI in Render environment variables.');

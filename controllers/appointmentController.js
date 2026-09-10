@@ -1,4 +1,6 @@
+import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
+import Clinic from '../models/Clinic.js';
 import {
   sendAppointmentConfirmationEmail,
   sendAppointmentCancellationEmail,
@@ -59,16 +61,67 @@ const isTodayDateBackend = (dateStr) => {
 // @access  Public
 export const createAppointment = async (req, res) => {
   try {
-    const { name, phone, email, centre, hospital, problem, service, date, time, preferredTime, message } = req.body;
+    const {
+      name,
+      phone,
+      email,
+      clinic,
+      centre,
+      hospital,
+      problem,
+      service,
+      date,
+      time,
+      preferredTime,
+      message,
+      consultationType
+    } = req.body;
 
-    if (!name || !phone) {
+    if (!name || !name.trim() || !phone || !phone.trim()) {
       return res.status(400).json({
         success: false,
         message: 'Please provide both name and phone number'
       });
     }
 
-    const appointmentCentre = centre || hospital || 'Rudraksh IVF & Urology Centre (Sharda Nagar)';
+    const rawClinicInput = clinic || centre || hospital;
+
+    if (!rawClinicInput) {
+      return res.status(400).json({
+        success: false,
+        message: 'Clinic ID is required'
+      });
+    }
+
+    let targetClinicObj = null;
+
+    if (mongoose.Types.ObjectId.isValid(rawClinicInput)) {
+      targetClinicObj = await Clinic.findById(rawClinicInput);
+      if (!targetClinicObj) {
+        return res.status(404).json({
+          success: false,
+          message: 'Selected clinic does not exist'
+        });
+      }
+    } else {
+      if (typeof rawClinicInput === 'string') {
+        const str = rawClinicInput.trim();
+        targetClinicObj = await Clinic.findOne({
+          $or: [
+            { clinicId: str },
+            { name: { $regex: new RegExp(str.replace(/[\(\)]/g, '\\$&'), 'i') } }
+          ]
+        });
+      }
+
+      if (!targetClinicObj) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid Clinic ID format'
+        });
+      }
+    }
+
     const appointmentProblem = problem || service || 'General Urology Consultation';
     const appointmentTime = time || preferredTime || '11:00 AM';
 
@@ -91,23 +144,26 @@ export const createAppointment = async (req, res) => {
       name: name.trim(),
       phone: phone.trim(),
       email: email ? email.trim() : '',
-      centre: appointmentCentre,
+      clinic: targetClinicObj._id,
       problem: appointmentProblem,
       date: date || new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
       time: appointmentTime,
       message: message ? message.trim() : '',
-      status: 'Pending'
+      status: 'Pending',
+      consultationType: consultationType || 'First Visit'
     });
 
+    const populatedAppointment = await Appointment.findById(newAppointment._id).populate('clinic', 'name address phone timings tag badgeLabel');
+
     // Send submission email in background (non-blocking for sub-second response)
-    sendAppointmentSubmissionEmail(newAppointment)
+    sendAppointmentSubmissionEmail(populatedAppointment)
       .then((emailResult) => console.log('Submission Email Status:', emailResult))
       .catch((err) => console.error('Async Submission Email Error:', err.message));
 
     res.status(201).json({
       success: true,
       message: 'Appointment booked successfully',
-      data: newAppointment,
+      data: populatedAppointment,
       emailResult: { success: true }
     });
   } catch (error) {
@@ -126,7 +182,9 @@ export const getConfirmedAppointments = async (req, res) => {
   try {
     const appointments = await Appointment.find({
       status: { $nin: ['Cancelled', 'cancelled', 'Canceled', 'canceled', 'Rejected', 'rejected'] }
-    }).select('centre date time status problem name phone email');
+    })
+      .populate('clinic', 'name address phone')
+      .select('clinic date time status problem name phone email consultationType');
 
     res.status(200).json({
       success: true,
@@ -148,7 +206,10 @@ export const getConfirmedAppointments = async (req, res) => {
 // @access  Private/Admin
 export const getAdminAppointments = async (req, res) => {
   try {
-    const appointments = await Appointment.find().sort({ createdAt: -1 });
+    const appointments = await Appointment.find()
+      .populate('clinic', 'name address phone tag badgeLabel timings')
+      .sort({ createdAt: -1 });
+
     res.status(200).json({
       success: true,
       count: appointments.length,
@@ -168,8 +229,12 @@ export const updateAppointmentStatus = async (req, res) => {
     const { status, appointment } = req.body;
     let targetApt = null;
 
-    if (req.params.id && req.params.id.length === 24) {
-      targetApt = await Appointment.findById(req.params.id);
+    if (req.params.id && mongoose.Types.ObjectId.isValid(req.params.id)) {
+      targetApt = await Appointment.findById(req.params.id).populate('clinic', 'name address phone');
+    }
+
+    if (!targetApt && appointment && appointment._id && mongoose.Types.ObjectId.isValid(appointment._id)) {
+      targetApt = await Appointment.findById(appointment._id).populate('clinic', 'name address phone');
     }
 
     if (!targetApt && appointment) {
@@ -187,6 +252,7 @@ export const updateAppointmentStatus = async (req, res) => {
       if (typeof targetApt.save === 'function') {
         targetApt.status = status;
         await targetApt.save();
+        targetApt = await Appointment.findById(targetApt._id).populate('clinic', 'name address phone');
       } else {
         targetApt.status = status;
       }
@@ -229,8 +295,14 @@ export const notifyAppointmentEmail = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Appointment data is required' });
     }
 
-    const targetStatus = status || appointment.status || 'Confirmed';
-    const aptObj = { ...appointment, status: targetStatus };
+    let aptObj = appointment;
+    if (appointment._id && mongoose.Types.ObjectId.isValid(appointment._id)) {
+      const dbApt = await Appointment.findById(appointment._id).populate('clinic', 'name address phone');
+      if (dbApt) aptObj = dbApt;
+    }
+
+    const targetStatus = status || aptObj.status || 'Confirmed';
+    aptObj.status = targetStatus;
     const statusLower = String(targetStatus).toLowerCase();
 
     let result = { success: false };

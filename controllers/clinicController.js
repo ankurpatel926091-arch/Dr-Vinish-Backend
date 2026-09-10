@@ -32,19 +32,43 @@ export const initialClinics = [
   }
 ];
 
+// Seed initial clinics into MongoDB if empty (without duplicate records)
+export const seedInitialClinics = async () => {
+  try {
+    for (const item of initialClinics) {
+      const exists = await Clinic.findOne({
+        $or: [
+          { clinicId: item.clinicId },
+          { name: item.name }
+        ]
+      });
+      if (!exists) {
+        await Clinic.create(item);
+        console.log(`Seeded clinic: ${item.name}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error seeding initial clinics:', error.message);
+  }
+};
+
 // @desc    Get active clinics for public website
 // @route   GET /api/clinics
 // @access  Public
 export const getPublicClinics = async (req, res) => {
   try {
-    const clinics = await Clinic.find({ active: true }).sort({ createdAt: 1 });
+    let clinics = await Clinic.find({ active: true }).sort({ createdAt: 1 });
+    if (clinics.length === 0) {
+      await seedInitialClinics();
+      clinics = await Clinic.find({ active: true }).sort({ createdAt: 1 });
+    }
     res.status(200).json({
       success: true,
       count: clinics.length,
-      data: clinics.length > 0 ? clinics : initialClinics
+      data: clinics
     });
   } catch (error) {
-    res.status(200).json({ success: true, data: initialClinics });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -53,11 +77,15 @@ export const getPublicClinics = async (req, res) => {
 // @access  Private/Admin
 export const getAdminClinics = async (req, res) => {
   try {
-    const clinics = await Clinic.find().sort({ createdAt: 1 });
+    let clinics = await Clinic.find().sort({ createdAt: 1 });
+    if (clinics.length === 0) {
+      await seedInitialClinics();
+      clinics = await Clinic.find().sort({ createdAt: 1 });
+    }
     res.status(200).json({
       success: true,
       count: clinics.length,
-      data: clinics.length > 0 ? clinics : initialClinics
+      data: clinics
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -69,6 +97,16 @@ export const getAdminClinics = async (req, res) => {
 // @access  Private/Admin
 export const createClinic = async (req, res) => {
   try {
+    const { name } = req.body;
+    if (name) {
+      const existing = await Clinic.findOne({ name: name.trim() });
+      if (existing) {
+        return res.status(400).json({
+          success: false,
+          message: 'A clinic with this name already exists'
+        });
+      }
+    }
     const clinic = await Clinic.create(req.body);
     res.status(201).json({
       success: true,
@@ -80,7 +118,7 @@ export const createClinic = async (req, res) => {
   }
 };
 
-// @desc    Update clinic location (timing, helpline phone, address, photo, map)
+// @desc    Update clinic location
 // @route   PUT /api/admin/clinics/:id
 // @access  Private/Admin
 export const updateClinic = async (req, res) => {
@@ -89,12 +127,10 @@ export const updateClinic = async (req, res) => {
     const body = req.body;
     let clinic = null;
 
-    // 1. Try finding by MongoDB _id if valid 24-char hex
     if (mongoose.Types.ObjectId.isValid(id)) {
       clinic = await Clinic.findByIdAndUpdate(id, body, { new: true, runValidators: true });
     }
 
-    // 2. Try finding by clinicId or numeric id ('1' / '2' / 'morning' / 'evening')
     if (!clinic) {
       clinic = await Clinic.findOneAndUpdate(
         {
@@ -108,7 +144,6 @@ export const updateClinic = async (req, res) => {
       );
     }
 
-    // 3. Try matching by clinic name in req.body
     if (!clinic && body.name) {
       if (body.name.includes('Rudraksh')) {
         clinic = await Clinic.findOneAndUpdate(
@@ -125,7 +160,6 @@ export const updateClinic = async (req, res) => {
       }
     }
 
-    // 4. Fallback create if not found
     if (!clinic) {
       clinic = await Clinic.create({ ...body, clinicId: String(id) });
     }
@@ -198,18 +232,5 @@ export const deleteClinic = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-// Seed initial clinics if empty
-export const seedInitialClinics = async () => {
-  try {
-    const count = await Clinic.countDocuments();
-    if (count === 0) {
-      await Clinic.insertMany(initialClinics);
-      console.log('Default Clinic locations seeded into MongoDB database.');
-    }
-  } catch (error) {
-    console.error('Error seeding initial clinics:', error.message);
   }
 };

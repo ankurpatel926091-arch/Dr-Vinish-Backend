@@ -16,10 +16,10 @@ const appointmentSchema = new mongoose.Schema({
     default: '',
     trim: true
   },
-  centre: {
-    type: String,
-    default: 'Rudraksh IVF & Urology Centre (Sharda Nagar)',
-    trim: true
+  clinic: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Clinic',
+    required: [true, 'Clinic ID is required']
   },
   problem: {
     type: String,

@@ -22,7 +22,10 @@ const adminSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    default: 'Administrator'
+    enum: ['admin', 'doctor'],
+    default: 'admin',
+    lowercase: true,
+    trim: true
   },
   createdAt: {
     type: Date,

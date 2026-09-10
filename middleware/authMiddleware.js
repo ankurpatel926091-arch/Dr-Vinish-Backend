@@ -12,14 +12,20 @@ export const protectAdmin = async (req, res, next) => {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'dr_vinish_admin_jwt_secret_key_2026_secure');
 
-      req.admin = await Admin.findById(decoded.id).select('-password');
+      const admin = await Admin.findById(decoded.id).select('-password');
 
-      if (!req.admin) {
+      if (!admin) {
         return res.status(401).json({
           success: false,
-          message: 'Admin account not found'
+          message: 'Account not found'
         });
       }
+
+      const normalizedRole = (admin.role === 'Administrator' || admin.role === 'admin') ? 'admin' : 'doctor';
+      admin.role = normalizedRole;
+
+      req.admin = admin;
+      req.user = admin;
 
       next();
     } catch (error) {
@@ -38,3 +44,17 @@ export const protectAdmin = async (req, res, next) => {
     });
   }
 };
+
+export const authorizeRoles = (...roles) => {
+  return (req, res, next) => {
+    const userRole = req.user?.role || req.admin?.role;
+    if (!roles.includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        message: `Role (${userRole}) is not authorized to access this route`
+      });
+    }
+    next();
+  };
+};
+
