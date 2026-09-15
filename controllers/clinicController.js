@@ -62,10 +62,18 @@ export const getPublicClinics = async (req, res) => {
       await seedInitialClinics();
       clinics = await Clinic.find({ active: true }).sort({ createdAt: 1 });
     }
+    const seen = new Set();
+    const uniqueClinics = clinics.filter(c => {
+      const key = (c.name || '').trim().toLowerCase();
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     res.status(200).json({
       success: true,
-      count: clinics.length,
-      data: clinics
+      count: uniqueClinics.length,
+      data: uniqueClinics
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -82,10 +90,18 @@ export const getAdminClinics = async (req, res) => {
       await seedInitialClinics();
       clinics = await Clinic.find().sort({ createdAt: 1 });
     }
+    const seen = new Set();
+    const uniqueClinics = clinics.filter(c => {
+      const key = (c.name || '').trim().toLowerCase();
+      if (!key) return true;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
     res.status(200).json({
       success: true,
-      count: clinics.length,
-      data: clinics
+      count: uniqueClinics.length,
+      data: uniqueClinics
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
