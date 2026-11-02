@@ -3,6 +3,7 @@ import {
   getPublicGallery,
   getAdminGallery,
   createGalleryItem,
+  updateGalleryItem,
   toggleGalleryStatus,
   deleteGalleryItem
 } from '../controllers/galleryController.js';
@@ -18,6 +19,7 @@ router.get('/', getPublicGallery);
 // Protected Admin routes
 router.get('/admin/all', protectAdmin, getAdminGallery);
 router.post('/admin/upload', protectAdmin, upload.single('file'), createGalleryItem);
+router.put('/admin/:id', protectAdmin, upload.single('file'), updateGalleryItem);
 router.patch('/admin/:id/toggle', protectAdmin, toggleGalleryStatus);
 router.delete('/admin/:id', protectAdmin, deleteGalleryItem);
 

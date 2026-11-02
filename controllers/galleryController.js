@@ -1,5 +1,6 @@
 import GalleryItem from '../models/GalleryItem.js';
 import cloudinary from '../config/cloudinary.js';
+import mongoose from 'mongoose';
 
 // Stream upload buffer to Cloudinary
 const uploadToCloudinary = (fileBuffer, resourceType = 'auto') => {
@@ -32,11 +33,78 @@ const isCloudinaryConfigured = () => {
 // @access  Public
 export const getPublicGallery = async (req, res) => {
   try {
-    const items = await GalleryItem.find({ active: true }).sort({ createdAt: -1 });
+    const categories = [
+      'All',
+      'Photos',
+      'Videos',
+      'Surgical Setup',
+      'Doctor & Care',
+      'Clinic Facilities'
+    ];
+    const { category = 'All' } = req.query;
+
+    if (typeof category !== 'string' || !categories.includes(category)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gallery category'
+      });
+    }
+
+    const itemMatch = category === 'All'
+      ? {}
+      : category === 'Photos'
+        ? { $or: [{ type: 'photo' }, { category: 'Photos' }] }
+        : category === 'Videos'
+          ? { $or: [{ type: 'video' }, { category: 'Videos' }] }
+          : { category };
+
+    const [result] = await GalleryItem.aggregate([
+      { $match: { active: true } },
+      {
+        $facet: {
+          data: [
+            ...(Object.keys(itemMatch).length ? [{ $match: itemMatch }] : []),
+            { $sort: { createdAt: -1 } }
+          ],
+          categoryGroups: [
+            {
+              $group: {
+                _id: { category: '$category', type: '$type' },
+                count: { $sum: 1 }
+              }
+            }
+          ]
+        }
+      }
+    ]);
+
+    const categoryCounts = Object.fromEntries(
+      categories.map((name) => [name, 0])
+    );
+
+    for (const group of result.categoryGroups) {
+      const { category: itemCategory, type } = group._id || {};
+      categoryCounts.All += group.count;
+
+      if (type === 'photo' || itemCategory === 'Photos') {
+        categoryCounts.Photos += group.count;
+      }
+      if (type === 'video' || itemCategory === 'Videos') {
+        categoryCounts.Videos += group.count;
+      }
+      if (
+        categories.includes(itemCategory) &&
+        !['All', 'Photos', 'Videos'].includes(itemCategory)
+      ) {
+        categoryCounts[itemCategory] += group.count;
+      }
+    }
+
     res.status(200).json({
       success: true,
-      count: items.length,
-      data: items
+      count: result.data.length,
+      categoryCounts,
+      data: result.data
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -125,6 +193,94 @@ export const createGalleryItem = async (req, res) => {
     });
   } catch (error) {
     console.error('Create Gallery Item Error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Update gallery media details and optionally replace its file
+// @route   PUT /api/gallery/admin/:id
+// @access  Private/Admin
+export const updateGalleryItem = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ success: false, message: 'Invalid gallery item ID' });
+    }
+
+    const item = await GalleryItem.findById(req.params.id);
+    if (!item) {
+      return res.status(404).json({ success: false, message: 'Gallery item not found' });
+    }
+
+    const categories = ['Photos', 'Videos', 'Surgical Setup', 'Doctor & Care', 'Clinic Facilities'];
+    const { title, category, type, url, tag, active } = req.body;
+
+    if (typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ success: false, message: 'Title is required' });
+    }
+    if (!categories.includes(category)) {
+      return res.status(400).json({ success: false, message: 'Invalid gallery category' });
+    }
+    if (!['photo', 'video'].includes(type)) {
+      return res.status(400).json({ success: false, message: 'Invalid media type' });
+    }
+    if (active !== 'true' && active !== 'false' && typeof active !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'Invalid gallery status' });
+    }
+
+    const previousPublicId = item.publicId;
+    const previousType = item.type;
+    const previousUrl = item.url;
+
+    if (req.file) {
+      if (!isCloudinaryConfigured()) {
+        return res.status(500).json({
+          success: false,
+          message: 'Cloudinary configuration is missing'
+        });
+      }
+
+      const resourceType = req.file.mimetype.startsWith('video/') ? 'video' : 'image';
+      const uploaded = await uploadToCloudinary(req.file.buffer, resourceType);
+      item.url = uploaded.secure_url;
+      item.publicId = uploaded.public_id;
+      item.fileName = req.file.originalname;
+      item.isLocal = false;
+    } else if (typeof url === 'string') {
+      if (!url.trim()) {
+        return res.status(400).json({ success: false, message: 'Media URL cannot be empty' });
+      }
+      if (url.trim() !== previousUrl) {
+        item.url = url.trim();
+        item.publicId = '';
+        item.fileName = '';
+        item.isLocal = false;
+      }
+    }
+
+    item.title = title.trim();
+    item.category = category;
+    item.type = type;
+    item.tag = typeof tag === 'string' ? tag.trim() : item.tag;
+    item.active = active === true || active === 'true';
+    await item.save();
+
+    if (previousPublicId && previousPublicId !== item.publicId && isCloudinaryConfigured()) {
+      try {
+        await cloudinary.uploader.destroy(previousPublicId, {
+          resource_type: previousType === 'video' ? 'video' : 'image'
+        });
+      } catch (cleanupError) {
+        console.error(`Cloudinary cleanup failed for replaced media (${previousPublicId}):`, cleanupError.message);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Gallery item updated successfully',
+      data: item
+    });
+  } catch (error) {
+    console.error('Update Gallery Item Error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

@@ -19,19 +19,31 @@ import { seedInitialClinics } from './controllers/clinicController.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables
 dotenv.config();
 
 const app = express();
 
-// Middleware
+// ===== CORS CONFIGURATION =====
+const allowedOrigins = [
+  'https://dr-vinish-singh-frontend.vercel.app', // Aapka Frontend (Vercel)
+  'http://localhost:5173', // Local Vite testing ke liye
+  'http://localhost:5174', // AdminPanel Vite dev server
+  'http://localhost:3000'  // Local CRA testing ke liye
+];
+
 app.use(cors({
-  origin: '*',
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS policy: Ye origin allowed nahi hai'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
   credentials: true
 }));
-app.options('*', cors());
+
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
@@ -96,7 +108,7 @@ const startApp = async () => {
     await seedDefaultdoctor();
     await seedInitialClinics();
   } catch (dbErr) {
-    console.error('Warning: Server started without DB connection. Please configure MONGO_URI in Render environment variables.');
+    console.error('Warning: Server started without DB connection. Please configure MONGO_URI in environment variables.');
   }
 
   app.listen(PORT, () => {
