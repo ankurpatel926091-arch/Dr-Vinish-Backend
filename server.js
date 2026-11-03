@@ -23,17 +23,23 @@ dotenv.config();
 
 const app = express();
 
-// ===== CORS CONFIGURATION =====
 const allowedOrigins = [
-  'https://dr-vinish-singh-frontend.vercel.app', // Aapka Frontend (Vercel)
-  'http://localhost:5173', // Local Vite testing ke liye
-  'http://localhost:5174', // AdminPanel Vite dev server
-  'http://localhost:3000'  // Local CRA testing ke liye
+  'https://dr-vinish-singh-frontend.vercel.app',
+  'https://dr-vinish-singh-admin-panel.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:3000'
 ];
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  return /\.(vercel|netlify)\.app$/i.test(origin);
+};
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
     } else {
       callback(new Error('CORS policy: Ye origin allowed nahi hai'));
@@ -47,10 +53,8 @@ app.use(cors({
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
-// Static uploads folder for video & image storage
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Routes
 app.use('/api/admin', adminRoutes);
 app.use('/api/gallery', galleryRoutes);
 app.use('/api/blogs', blogRoutes);
@@ -58,12 +62,10 @@ app.use('/api/enquiries', enquiryRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/clinics', clinicRoutes);
 
-// Health check endpoint
 app.get('/', (req, res) => {
   res.send('Dr. Vinish Kumar Singh Admin API is running...');
 });
 
-// Seed default Admin if no admin exists
 const seedDefaultAdmin = async () => {
   try {
     const adminExists = await Admin.findOne({ email: 'admin@drvinish.com' });
@@ -100,7 +102,6 @@ const seedDefaultdoctor = async () => {
 
 const PORT = process.env.PORT || 5000;
 
-// Start Server after connecting to DB
 const startApp = async () => {
   try {
     await connectDB();
