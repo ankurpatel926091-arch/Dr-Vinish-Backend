@@ -63,6 +63,7 @@ export const createAppointment = async (req, res) => {
   try {
     const {
       name,
+      age,
       phone,
       email,
       clinic,
@@ -82,6 +83,17 @@ export const createAppointment = async (req, res) => {
         success: false,
         message: 'Please provide both name and phone number'
       });
+    }
+
+    let patientAge;
+    if (age !== undefined && age !== null && age !== '') {
+      patientAge = Number(age);
+      if (!Number.isInteger(patientAge) || patientAge < 0 || patientAge > 120) {
+        return res.status(400).json({
+          success: false,
+          message: 'Age must be a whole number between 0 and 120'
+        });
+      }
     }
 
     const rawClinicInput = clinic || centre || hospital;
@@ -142,6 +154,7 @@ export const createAppointment = async (req, res) => {
 
     const newAppointment = await Appointment.create({
       name: name.trim(),
+      ...(patientAge !== undefined ? { age: patientAge } : {}),
       phone: phone.trim(),
       email: email ? email.trim() : '',
       clinic: targetClinicObj._id,

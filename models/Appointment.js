@@ -6,6 +6,11 @@ const appointmentSchema = new mongoose.Schema({
     required: [true, 'Name is required'],
     trim: true
   },
+  age: {
+    type: Number,
+    min: [0, 'Age must be at least 0'],
+    max: [120, 'Age cannot be greater than 120']
+  },
   phone: {
     type: String,
     required: [true, 'Phone number is required'],
