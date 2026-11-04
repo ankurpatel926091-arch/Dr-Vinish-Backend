@@ -26,10 +26,21 @@ const app = express();
 const allowedOrigins = [
   'https://dr-vinish-singh-frontend.vercel.app',
   'https://dr-vinish-singh-admin-panel.vercel.app',
+  "https://www.urosurgeondrvinish.com/",
+  "http://www.urosurgeondrvinish.com/",
+  "http://www.urosurgeondrvinish.com",
+  "https://www.urosurgeondrvinish.com",   
+  "https://urosurgeondrvinish.com",
+  "http://urosurgeondrvinish.com", 
+  "https://admin.urosurgeondrvinish.com/",
+  "https://admin.urosurgeondrvinish.com",
+  "http://admin.urosurgeondrvinish.com/",
   'http://localhost:5173',
   'http://localhost:5174',
   'http://localhost:3000'
 ];
+
+
 
 const isAllowedOrigin = (origin) => {
   if (!origin) return true;
@@ -40,7 +51,7 @@ const isAllowedOrigin = (origin) => {
 app.use(cors({
   origin: function (origin, callback) {
     if (isAllowedOrigin(origin)) {
-      callback(null, true);
+      callback(null, true); 
     } else {
       callback(new Error('CORS policy: Ye origin allowed nahi hai'));
     }

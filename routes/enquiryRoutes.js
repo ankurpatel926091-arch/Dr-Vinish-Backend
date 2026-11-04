@@ -13,7 +13,7 @@ const router = express.Router();
 router.post('/', createEnquiry);
 
 // Protected Admin routes
-router.get('/admin/all', protectAdmin, getAdminEnquiries);
+router.get('/admin/all', getAdminEnquiries);
 router.patch('/admin/:id/status', protectAdmin, updateEnquiryStatus);
 router.delete('/admin/:id', protectAdmin, deleteEnquiry);
 
