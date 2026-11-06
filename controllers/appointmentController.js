@@ -75,7 +75,8 @@ export const createAppointment = async (req, res) => {
       time,
       preferredTime,
       message,
-      consultationType
+      consultationType,
+      source
     } = req.body;
 
     if (!name || !name.trim() || !phone || !phone.trim()) {
@@ -163,7 +164,8 @@ export const createAppointment = async (req, res) => {
       time: appointmentTime,
       message: message ? message.trim() : '',
       status: 'Pending',
-      consultationType: consultationType || 'First Visit'
+      consultationType: consultationType || 'First Visit',
+      source: source || 'Online'
     });
 
     const populatedAppointment = await Appointment.findById(newAppointment._id).populate('clinic', 'name address phone timings tag badgeLabel');
@@ -184,6 +186,105 @@ export const createAppointment = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error while booking appointment: ' + error.message
+    });
+  }
+};
+
+// @desc    Create an appointment from the admin panel
+// @route   POST /api/appointments/admin
+// @access  Private/Admin
+export const createAdminAppointment = async (req, res) => {
+  try {
+    const {
+      name,
+      age,
+      phone,
+      email,
+      clinic,
+      problem,
+      date,
+      time,
+      message,
+      consultationType,
+      status
+    } = req.body;
+
+    if (typeof name !== 'string' || !name.trim() || typeof phone !== 'string' || !phone.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Patient name and phone number are required'
+      });
+    }
+
+    if (typeof clinic !== 'string' || !mongoose.Types.ObjectId.isValid(clinic)) {
+      return res.status(400).json({
+        success: false,
+        message: 'A valid clinic is required'
+      });
+    }
+
+    const selectedClinic = await Clinic.findById(clinic);
+    if (!selectedClinic) {
+      return res.status(404).json({
+        success: false,
+        message: 'Selected clinic does not exist'
+      });
+    }
+
+    let patientAge;
+    if (age !== undefined && age !== null && age !== '') {
+      patientAge = Number(age);
+      if (!Number.isInteger(patientAge) || patientAge < 0 || patientAge > 120) {
+        return res.status(400).json({
+          success: false,
+          message: 'Age must be a whole number between 0 and 120'
+        });
+      }
+    }
+
+    const validStatuses = ['Pending', 'Confirmed', 'Visited', 'Missed', 'Cancelled'];
+    const validConsultationTypes = ['First Visit', 'Follow-up'];
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid appointment status'
+      });
+    }
+    if (consultationType && !validConsultationTypes.includes(consultationType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid consultation type'
+      });
+    }
+
+    const appointment = await Appointment.create({
+      name: name.trim(),
+      ...(patientAge !== undefined ? { age: patientAge } : {}),
+      phone: phone.trim(),
+      email: email ? String(email).trim() : '',
+      clinic: selectedClinic._id,
+      problem: problem ? String(problem).trim() : undefined,
+      date: date || undefined,
+      time: time || undefined,
+      message: message ? String(message).trim() : '',
+      consultationType: consultationType || 'First Visit',
+      status: status || 'Pending',
+      source: 'Manual'
+    });
+
+    const populatedAppointment = await Appointment.findById(appointment._id)
+      .populate('clinic', 'name address phone tag badgeLabel timings');
+
+    res.status(201).json({
+      success: true,
+      message: 'Appointment created successfully',
+      data: populatedAppointment
+    });
+  } catch (error) {
+    console.error('Create Admin Appointment Error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while creating appointment'
     });
   }
 };

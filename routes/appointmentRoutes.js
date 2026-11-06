@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   createAppointment,
+  createAdminAppointment,
   getConfirmedAppointments,
   notifyAppointmentEmail,
   getAdminAppointments,
@@ -18,6 +19,7 @@ router.get('/public/confirmed-slots', getConfirmedAppointments);
 router.post('/notify-email', notifyAppointmentEmail);
 
 // Protected Admin routes
+router.post('/admin', protectAdmin, createAdminAppointment);
 router.get('/admin/all', protectAdmin, getAdminAppointments);
 router.patch('/admin/:id/status', protectAdmin, updateAppointmentStatus);
 router.delete('/admin/:id', protectAdmin, deleteAppointment);

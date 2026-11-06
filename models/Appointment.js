@@ -52,6 +52,11 @@ const appointmentSchema = new mongoose.Schema({
     type: String,
     enum: ['First Visit', 'Follow-up'],
     default: 'First Visit'
+  },
+  source: {
+    type: String,
+    enum: ['Online', 'Walk-in'],
+    default: 'Online'
   }
 }, {
   timestamps: true
