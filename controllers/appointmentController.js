@@ -242,7 +242,7 @@ export const createAdminAppointment = async (req, res) => {
       }
     }
 
-    const validStatuses = ['Pending', 'Confirmed', 'Visited', 'Missed', 'Cancelled'];
+    const validStatuses = ['Pending', 'Confirmed', 'Checked-in', 'Visited', 'Missed', 'Cancelled'];
     const validConsultationTypes = ['First Visit', 'Follow-up'];
     if (status && !validStatuses.includes(status)) {
       return res.status(400).json({
@@ -269,7 +269,7 @@ export const createAdminAppointment = async (req, res) => {
       message: message ? String(message).trim() : '',
       consultationType: consultationType || 'First Visit',
       status: status || 'Pending',
-      source: 'Manual'
+      source: 'Walk-in'
     });
 
     const populatedAppointment = await Appointment.findById(appointment._id)
@@ -285,6 +285,106 @@ export const createAdminAppointment = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error while creating appointment'
+    });
+  }
+};
+
+// @desc    Check-in a confirmed appointment, generate visitId & queue token
+// @route   PATCH /api/appointments/admin/:id/check-in
+// @access  Private/Admin
+export const checkInAppointment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid appointment ID'
+      });
+    }
+
+    const appointment = await Appointment.findById(id);
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found'
+      });
+    }
+
+    if (['Cancelled', 'Missed', 'Visited'].includes(appointment.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot check in an appointment with status ${appointment.status}`
+      });
+    }
+
+    // Idempotent return if already checked in with visitId and tokenNumber
+    if (appointment.status === 'Checked-in' && appointment.visitId && appointment.tokenNumber) {
+      const existingPopulated = await Appointment.findById(appointment._id)
+        .populate('clinic', 'name address phone tag badgeLabel timings');
+      return res.status(200).json({
+        success: true,
+        message: 'Patient already checked in',
+        data: existingPopulated
+      });
+    }
+
+    const existingVisits = await Appointment.find({
+      visitId: { $exists: true, $nin: [null, ''] }
+    }).select('visitId');
+
+    const maxVisitNum = existingVisits.reduce((max, item) => {
+      const num = Number(String(item.visitId || '').replace(/\D/g, ''));
+      return Number.isFinite(num) ? Math.max(max, num) : max;
+    }, 5000);
+
+    const tokenFilter = appointment.date
+      ? { date: appointment.date, tokenNumber: { $exists: true, $ne: null } }
+      : { tokenNumber: { $exists: true, $ne: null } };
+    const existingTokens = await Appointment.find(tokenFilter).select('tokenNumber');
+    const maxTokenNum = existingTokens.reduce((max, item) => {
+      const num = Number(item.tokenNumber);
+      return Number.isFinite(num) ? Math.max(max, num) : max;
+    }, 0);
+
+    const serverCheckInTime = new Date().toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    const visitId = appointment.visitId || `VIS-${maxVisitNum + 1}`;
+    const tokenNumber = appointment.tokenNumber || (maxTokenNum + 1);
+    const checkInAt = (req.body?.checkInAt && String(req.body.checkInAt).trim()) || serverCheckInTime;
+    const checkedInBy =
+      (req.body?.checkedInBy && String(req.body.checkedInBy).trim()) ||
+      req.admin?.name ||
+      req.admin?.email ||
+      'Admin';
+
+    const populatedAppointment = await Appointment.findByIdAndUpdate(
+      appointment._id,
+      {
+        $set: {
+          status: 'Checked-in',
+          visitId,
+          tokenNumber,
+          checkInAt,
+          checkedInBy
+        }
+      },
+      { new: true }
+    ).populate('clinic', 'name address phone tag badgeLabel timings');
+
+    res.status(200).json({
+      success: true,
+      message: 'Patient checked in successfully',
+      data: populatedAppointment
+    });
+  } catch (error) {
+    console.error('Check-In Appointment Error:', error.message);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Server error while checking in patient'
     });
   }
 };
@@ -320,7 +420,59 @@ export const getConfirmedAppointments = async (req, res) => {
 // @access  Private/Admin
 export const getAdminAppointments = async (req, res) => {
   try {
-    const appointments = await Appointment.find()
+    const { status, consultationType, source, search } = req.query;
+    const conditions = [];
+
+    const escapeRegex = (val) => String(val).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    if (status && String(status).trim().toLowerCase() !== 'all') {
+      conditions.push({
+        status: new RegExp(`^${escapeRegex(String(status).trim())}$`, 'i')
+      });
+    }
+
+    if (consultationType && String(consultationType).trim().toLowerCase() !== 'all') {
+      conditions.push({
+        consultationType: new RegExp(`^${escapeRegex(String(consultationType).trim())}$`, 'i')
+      });
+    }
+
+    if (source && String(source).trim().toLowerCase() !== 'all') {
+      const normalizedSource = String(source).trim().toLowerCase();
+      if (normalizedSource === 'online') {
+        conditions.push({
+          $or: [
+            { source: /^online$/i },
+            { source: { $exists: false } },
+            { source: null },
+            { source: '' }
+          ]
+        });
+      } else if (normalizedSource === 'walk-in') {
+        conditions.push({ source: /^walk-in$/i });
+      }
+    }
+
+    if (search && String(search).trim()) {
+      const searchRegex = new RegExp(escapeRegex(String(search).trim()), 'i');
+      const matchingClinics = await Clinic.find({ name: searchRegex }).select('_id');
+      const matchingClinicIds = matchingClinics.map((c) => c._id);
+
+      conditions.push({
+        $or: [
+          { name: searchRegex },
+          { phone: searchRegex },
+          { email: searchRegex },
+          { problem: searchRegex },
+          { message: searchRegex },
+          ...(matchingClinicIds.length > 0 ? [{ clinic: { $in: matchingClinicIds } }] : [])
+        ]
+      });
+    }
+
+    const mongoQuery = conditions.length > 0 ? { $and: conditions } : {};
+
+    const appointments = await Appointment.find(mongoQuery)
       .populate('clinic', 'name address phone tag badgeLabel timings')
       .sort({ createdAt: -1 });
 

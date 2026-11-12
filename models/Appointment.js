@@ -45,8 +45,23 @@ const appointmentSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Pending', 'Confirmed', 'Visited', 'Missed', 'Cancelled'],
+    enum: ['Pending', 'Confirmed', 'Checked-in', 'Visited', 'Missed', 'Cancelled'],
     default: 'Pending'
+  },
+  visitId: {
+    type: String,
+    trim: true
+  },
+  tokenNumber: {
+    type: Number
+  },
+  checkInAt: {
+    type: String,
+    trim: true
+  },
+  checkedInBy: {
+    type: String,
+    trim: true
   },
   consultationType: {
     type: String,
