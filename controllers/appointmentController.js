@@ -64,6 +64,7 @@ export const createAppointment = async (req, res) => {
     const {
       name,
       age,
+      gender,
       phone,
       email,
       clinic,
@@ -96,6 +97,9 @@ export const createAppointment = async (req, res) => {
         });
       }
     }
+
+    const validGenders = ['Male', 'Female', 'Other'];
+    const patientGender = (gender && validGenders.includes(gender)) ? gender : 'Male';
 
     const rawClinicInput = clinic || centre || hospital;
 
@@ -165,6 +169,7 @@ export const createAppointment = async (req, res) => {
       message: message ? message.trim() : '',
       status: 'Pending',
       consultationType: consultationType || 'First Visit',
+      gender: patientGender,
       source: source || 'Online'
     });
 
@@ -198,6 +203,7 @@ export const createAdminAppointment = async (req, res) => {
     const {
       name,
       age,
+      gender,
       phone,
       email,
       clinic,
@@ -244,6 +250,13 @@ export const createAdminAppointment = async (req, res) => {
 
     const validStatuses = ['Pending', 'Confirmed', 'Checked-in', 'Visited', 'Missed', 'Cancelled'];
     const validConsultationTypes = ['First Visit', 'Follow-up'];
+    const validGenders = ['Male', 'Female', 'Other'];
+    if (gender && !validGenders.includes(gender)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid gender. Allowed values: Male, Female, Other'
+      });
+    }
     if (status && !validStatuses.includes(status)) {
       return res.status(400).json({
         success: false,
@@ -268,6 +281,7 @@ export const createAdminAppointment = async (req, res) => {
       time: time || undefined,
       message: message ? String(message).trim() : '',
       consultationType: consultationType || 'First Visit',
+      gender: gender || 'Male',
       status: status || 'Pending',
       source: 'Walk-in'
     });
@@ -427,7 +441,7 @@ export const getAdminAppointments = async (req, res) => {
 
     if (status && String(status).trim().toLowerCase() !== 'all') {
       conditions.push({
-        status: new RegExp(`^${escapeRegex(String(status).trim())}$`, 'i')
+        status: new RegExp(`^${escapeRegex  (String(status).trim())}$`, 'i')
       });
     }
 

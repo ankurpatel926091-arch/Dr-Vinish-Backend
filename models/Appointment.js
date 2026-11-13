@@ -11,6 +11,11 @@ const appointmentSchema = new mongoose.Schema({
     min: [0, 'Age must be at least 0'],
     max: [120, 'Age cannot be greater than 120']
   },
+  gender: {
+    type: String,
+    enum: ['Male', 'Female', 'Other'],
+    default: 'Male'
+  },
   phone: {
     type: String,
     required: [true, 'Phone number is required'],
