@@ -11,6 +11,7 @@ import enquiryRoutes from './routes/enquiryRoutes.js';
 import appointmentRoutes from './routes/appointmentRoutes.js';
 import clinicRoutes from './routes/clinicRoutes.js';
 import billingRoutes from './routes/billingRoutes.js';
+import queueRoutes from './routes/queueRoutes.js';
 import Admin from './models/Admin.js';
 import { seedGalleryItems } from './controllers/galleryController.js';
 import { seedBlogsIfEmpty } from './controllers/blogController.js';
@@ -74,6 +75,7 @@ app.use('/api/enquiries', enquiryRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/clinics', clinicRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/queue', queueRoutes);
 
 app.get('/', (req, res) => {
   res.send('Dr. Vinish Kumar Singh Admin API is running...');
