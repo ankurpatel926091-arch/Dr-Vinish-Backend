@@ -12,11 +12,8 @@ import appointmentRoutes from './routes/appointmentRoutes.js';
 import clinicRoutes from './routes/clinicRoutes.js';
 import billingRoutes from './routes/billingRoutes.js';
 import queueRoutes from './routes/queueRoutes.js';
+import consultationRoutes from './routes/consultationRoutes.js';
 import Admin from './models/Admin.js';
-import { seedGalleryItems } from './controllers/galleryController.js';
-import { seedBlogsIfEmpty } from './controllers/blogController.js';
-import { seedInitialEnquiries } from './controllers/enquiryController.js';
-import { seedInitialClinics } from './controllers/clinicController.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,6 +73,7 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/clinics', clinicRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/queue', queueRoutes);
+app.use('/api/consultations', consultationRoutes);
 
 app.get('/', (req, res) => {
   res.send('Dr. Vinish Kumar Singh Admin API is running...');
@@ -122,7 +120,6 @@ const startApp = async () => {
     await connectDB();
     await seedDefaultAdmin();
     await seedDefaultdoctor();
-    await seedInitialClinics();
   } catch (dbErr) {
     console.error('Warning: Server started without DB connection. Please configure MONGO_URI in environment variables.');
   }

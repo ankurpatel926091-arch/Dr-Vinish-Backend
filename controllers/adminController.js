@@ -8,7 +8,7 @@ const generateToken = (id, role) => {
   return jwt.sign(
     { id, role: normalizedRole },
     process.env.JWT_SECRET || 'dr_vinish_admin_jwt_secret_key_2026_secure',
-    { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
+    { expiresIn: process.env.JWT_EXPIRES_IN || '3d' }
   );
 };
 
