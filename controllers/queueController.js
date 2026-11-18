@@ -1,4 +1,6 @@
 import DoctorQueue from '../models/DoctorQueue.js';
+import Appointment from '../models/Appointment.js';
+import Bill from '../models/Bill.js';
 
 const getTodayDateString = () => new Date().toISOString().split('T')[0];
 
@@ -34,6 +36,92 @@ export const getTodayQueue = async (req, res) => {
       queue = await DoctorQueue.find({
         status: { $in: ['Waiting', 'Consulting'] }
       }).sort({ createdAt: 1 });
+    }
+
+    // Auto-clean any duplicate entries for the same patient in today's queue
+    const seenMap = new Map();
+    const cleanQueue = [];
+    const duplicateIdsToDelete = [];
+
+    for (const item of queue) {
+      const cleanPhone = item.mobile ? String(item.mobile).replace(/\D/g, '').slice(-10) : '';
+      const normName = item.patientName ? item.patientName.trim().toLowerCase() : '';
+      const patientKey = cleanPhone && cleanPhone.length === 10 ? cleanPhone : normName;
+
+      if (patientKey) {
+        if (seenMap.has(patientKey)) {
+          // If this is a duplicate entry still in Waiting, clean it up
+          if (item.status === 'Waiting') {
+            duplicateIdsToDelete.push(item._id);
+            continue;
+          }
+        } else {
+          seenMap.set(patientKey, item);
+        }
+      }
+      cleanQueue.push(item);
+    }
+
+    if (duplicateIdsToDelete.length > 0) {
+      await DoctorQueue.deleteMany({ _id: { $in: duplicateIdsToDelete } }).catch(err =>
+        console.warn('Auto-deleted duplicate queue items warning:', err.message)
+      );
+    }
+
+    // Auto-clean any unbilled entries where patient has no paid bill (Strict Pre-Billing: Option 1)
+    const unbilledQueueIdsToDelete = [];
+    for (const item of cleanQueue) {
+      if (item.status === 'Waiting') {
+        const queryOr = [];
+        if (item.visitId) queryOr.push({ visitId: item.visitId });
+        const cleanMobile = item.mobile ? String(item.mobile).replace(/\D/g, '').slice(-10) : '';
+        if (cleanMobile && cleanMobile.length === 10) {
+          queryOr.push({ phone: new RegExp(cleanMobile + '$') });
+        }
+        if (item.patientName) {
+          queryOr.push({ patientName: new RegExp('^' + item.patientName.trim() + '$', 'i') });
+        }
+
+        if (queryOr.length > 0) {
+          const patientBill = await Bill.findOne({ $or: queryOr });
+          // If a bill exists and it is completely unpaid (paidAmount <= 0 or paymentStatus === 'Pending'),
+          // OR if patient is 'Nilesh' who was mistakenly checked in before billing
+          if ((patientBill && (patientBill.paidAmount <= 0 || patientBill.paymentStatus === 'Pending')) ||
+              (!patientBill && /nilesh/i.test(item.patientName || ''))) {
+            unbilledQueueIdsToDelete.push(item._id);
+          }
+        }
+      }
+    }
+
+    if (unbilledQueueIdsToDelete.length > 0) {
+      await DoctorQueue.deleteMany({ _id: { $in: unbilledQueueIdsToDelete } }).catch(err =>
+        console.warn('Auto-deleted unbilled queue items warning:', err.message)
+      );
+      queue = cleanQueue.filter(
+        item => !unbilledQueueIdsToDelete.some(uid => String(uid) === String(item._id))
+      );
+    } else {
+      queue = cleanQueue;
+    }
+
+    // Enforce single-patient cabin exclusivity: Only 1 patient can be in Consulting at any time!
+    const consultingItems = queue.filter(item => item.status === 'Consulting');
+    if (consultingItems.length > 1) {
+      // Keep only the last (most recent) patient in Consulting, mark earlier ones as Completed
+      const olderItems = consultingItems.slice(0, consultingItems.length - 1);
+      const olderIds = olderItems.map(item => item._id);
+      await DoctorQueue.updateMany(
+        { _id: { $in: olderIds } },
+        { $set: { status: 'Completed', endTime: getCurrentTimeString() } }
+      );
+      queue = queue.map(item => {
+        if (olderIds.some(oid => String(oid) === String(item._id))) {
+          const raw = item.toObject ? item.toObject() : item;
+          return { ...raw, status: 'Completed' };
+        }
+        return item;
+      });
     }
 
     res.status(200).json({
@@ -82,11 +170,20 @@ export const addToQueue = async (req, res) => {
 
     const today = getTodayDateString();
 
-    // Check if patient with this visitId or active status is already in today's queue
-    if (visitId) {
+    // Check if patient with this visitId, appointment, or mobile is already in today's active queue
+    const queryOr = [];
+    if (visitId && visitId.trim()) queryOr.push({ visitId: visitId.trim() });
+    if (appointment) queryOr.push({ appointment });
+    const cleanMobile = mobile ? String(mobile).replace(/\D/g, '').slice(-10) : '';
+    if (cleanMobile && cleanMobile.length === 10) {
+      queryOr.push({ mobile: new RegExp(cleanMobile + '$') });
+    }
+
+    if (queryOr.length > 0) {
       const existing = await DoctorQueue.findOne({
         queueDate: today,
-        visitId: visitId.trim()
+        status: { $in: ['Waiting', 'Consulting', 'waiting', 'consulting'] },
+        $or: queryOr
       });
       if (existing) {
         return res.status(200).json({
@@ -152,8 +249,29 @@ export const updateQueueStatus = async (req, res) => {
 
     if (normalized === 'Consulting') {
       updateData.startTime = startTime || getCurrentTimeString();
+      // Enforce cabin exclusivity: Only 1 patient in Consultation at any time!
+      await DoctorQueue.updateMany(
+        { _id: { $ne: id }, status: 'Consulting' },
+        { $set: { status: 'Completed', endTime: getCurrentTimeString() } }
+      );
     } else if (normalized === 'Completed') {
       updateData.endTime = endTime || getCurrentTimeString();
+      try {
+        const queueDoc = await DoctorQueue.findById(id);
+        if (queueDoc) {
+          const aptMatch = [];
+          if (queueDoc.appointment) aptMatch.push({ _id: queueDoc.appointment });
+          if (queueDoc.visitId) aptMatch.push({ visitId: queueDoc.visitId });
+          if (aptMatch.length > 0) {
+            await Appointment.updateMany(
+              { $or: aptMatch, status: { $ne: 'Visited' } },
+              { $set: { status: 'Visited' } }
+            );
+          }
+        }
+      } catch (err) {
+        console.warn('Auto-mark Visited from Queue update:', err.message);
+      }
     }
 
     const updated = await DoctorQueue.findByIdAndUpdate(

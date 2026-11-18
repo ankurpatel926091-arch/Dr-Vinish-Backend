@@ -4,7 +4,8 @@ import Clinic from '../models/Clinic.js';
 import {
   sendAppointmentConfirmationEmail,
   sendAppointmentCancellationEmail,
-  sendAppointmentSubmissionEmail
+  sendAppointmentSubmissionEmail,
+  extractAppointmentEmail
 } from '../utils/emailService.js';
 
 const parseTimeToMinutes = (timeStr) => {
@@ -288,6 +289,18 @@ export const createAdminAppointment = async (req, res) => {
 
     const populatedAppointment = await Appointment.findById(appointment._id)
       .populate('clinic', 'name address phone tag badgeLabel timings');
+
+    // Send email notification in background if patient provided an email
+    const patientEmail = extractAppointmentEmail(populatedAppointment);
+    if (patientEmail && patientEmail.includes('@')) {
+      const emailPromise = String(populatedAppointment.status).toLowerCase() === 'confirmed'
+        ? sendAppointmentConfirmationEmail(populatedAppointment)
+        : sendAppointmentSubmissionEmail(populatedAppointment);
+
+      emailPromise
+        .then((emailResult) => console.log('Admin Walk-in Email Status:', emailResult))
+        .catch((err) => console.error('Async Walk-in Email Error:', err.message));
+    }
 
     res.status(201).json({
       success: true,

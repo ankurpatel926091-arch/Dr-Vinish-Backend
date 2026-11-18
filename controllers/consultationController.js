@@ -1,4 +1,5 @@
 import Consultation from '../models/Consultation.js';
+import Appointment from '../models/Appointment.js';
 
 // @desc    Create or update a consultation
 // @route   POST /api/consultations
@@ -61,6 +62,27 @@ export const createOrUpdateConsultation = async (req, res) => {
       );
     } else {
       saved = await Consultation.create(payload);
+    }
+
+    // Automatically mark the linked appointment as Visited upon completing consultation
+    if (payload.status === 'COMPLETED') {
+      const matchConditions = [];
+      const aptId = pt.appointmentId || pt.appointment?._id || pt.appointment;
+      if (aptId && String(aptId).length === 24) {
+        matchConditions.push({ _id: aptId });
+      }
+      if (pt.visitId && pt.visitId !== '—') {
+        matchConditions.push({ visitId: pt.visitId });
+      }
+      if (payload.recordKey && payload.recordKey.startsWith('VIS-')) {
+        matchConditions.push({ visitId: payload.recordKey });
+      }
+      if (matchConditions.length > 0) {
+        await Appointment.updateMany(
+          { $or: matchConditions, status: { $ne: 'Visited' } },
+          { $set: { status: 'Visited' } }
+        ).catch((err) => console.warn('Auto-mark appointment Visited error:', err.message));
+      }
     }
 
     res.status(200).json({
