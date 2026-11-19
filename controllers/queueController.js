@@ -68,42 +68,7 @@ export const getTodayQueue = async (req, res) => {
       );
     }
 
-    // Auto-clean any unbilled entries where patient has no paid bill (Strict Pre-Billing: Option 1)
-    const unbilledQueueIdsToDelete = [];
-    for (const item of cleanQueue) {
-      if (item.status === 'Waiting') {
-        const queryOr = [];
-        if (item.visitId) queryOr.push({ visitId: item.visitId });
-        const cleanMobile = item.mobile ? String(item.mobile).replace(/\D/g, '').slice(-10) : '';
-        if (cleanMobile && cleanMobile.length === 10) {
-          queryOr.push({ phone: new RegExp(cleanMobile + '$') });
-        }
-        if (item.patientName) {
-          queryOr.push({ patientName: new RegExp('^' + item.patientName.trim() + '$', 'i') });
-        }
-
-        if (queryOr.length > 0) {
-          const patientBill = await Bill.findOne({ $or: queryOr });
-          // If a bill exists and it is completely unpaid (paidAmount <= 0 or paymentStatus === 'Pending'),
-          // OR if patient is 'Nilesh' who was mistakenly checked in before billing
-          if ((patientBill && (patientBill.paidAmount <= 0 || patientBill.paymentStatus === 'Pending')) ||
-              (!patientBill && /nilesh/i.test(item.patientName || ''))) {
-            unbilledQueueIdsToDelete.push(item._id);
-          }
-        }
-      }
-    }
-
-    if (unbilledQueueIdsToDelete.length > 0) {
-      await DoctorQueue.deleteMany({ _id: { $in: unbilledQueueIdsToDelete } }).catch(err =>
-        console.warn('Auto-deleted unbilled queue items warning:', err.message)
-      );
-      queue = cleanQueue.filter(
-        item => !unbilledQueueIdsToDelete.some(uid => String(uid) === String(item._id))
-      );
-    } else {
-      queue = cleanQueue;
-    }
+    queue = cleanQueue;
 
     // Enforce single-patient cabin exclusivity: Only 1 patient can be in Consulting at any time!
     const consultingItems = queue.filter(item => item.status === 'Consulting');

@@ -1,5 +1,7 @@
 import jwt from 'jsonwebtoken';
 import Admin from '../models/Admin.js';
+import Appointment from '../models/Appointment.js';
+import Bill from '../models/Bill.js';
 import cloudinary from '../config/cloudinary.js';
 
 // Helper: Generate JWT Token
@@ -206,6 +208,228 @@ export const uploadMedia = async (req, res) => {
   } catch (error) {
     console.error('Media Upload Error:', error.message);
     return res.status(500).json({ success: false, message: `Cloudinary upload failed: ${error.message}` });
+  }
+};
+
+// @desc    Get all unique real patients from database (Appointments & Bills)
+// @route   GET /api/admin/patients
+// @access  Private (Admin & Doctor)
+export const getAllPatients = async (req, res) => {
+  try {
+    const apts = await Appointment.find({}).sort({ createdAt: -1 });
+    const bills = await Bill.find({}).sort({ createdAt: -1 });
+
+    const patientMap = new Map();
+
+    // 1. Process from Appointments
+    for (const a of apts) {
+      const rawName = a.name ? a.name.trim() : 'Patient';
+      const cleanPhone = a.phone ? String(a.phone).replace(/\D/g, '').slice(-10) : '';
+      const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const key = cleanPhone ? `${normName}_${cleanPhone}` : normName;
+      if (!key) continue;
+
+      const nameParts = rawName.split(' ');
+      const firstName = nameParts[0] || rawName;
+      const lastName = nameParts.slice(1).join(' ') || '';
+      const regDate = a.createdAt ? new Date(a.createdAt).toISOString().split('T')[0] : '2026-11-19';
+
+      const uhid = a.visitId
+        ? `UHID-${a.visitId.replace(/\D/g, '')}`
+        : (cleanPhone && cleanPhone.length === 10 ? `UHID-${cleanPhone.slice(-5)}` : `UHID-${String(a._id).slice(-5).toUpperCase()}`);
+
+      const visitToken = a.visitId || (a.date ? `${a.date}_${a.time || ''}` : String(a._id));
+
+      if (!patientMap.has(key)) {
+        const vSet = new Set();
+        vSet.add(visitToken);
+
+        patientMap.set(key, {
+          id: String(a._id),
+          uhid,
+          firstName,
+          lastName,
+          name: rawName,
+          age: Number(a.age) || 35,
+          gender: a.gender || 'Male',
+          mobile: a.phone || '',
+          email: a.email || '',
+          address: a.message && a.message.length > 5 ? a.message : 'Lucknow, Uttar Pradesh',
+          emergencyContact: a.phone || '',
+          status: 'Active',
+          registeredOn: regDate,
+          visitId: a.visitId || '',
+          _visitsSet: vSet,
+          latestVisitDate: a.date || regDate,
+          latestProblem: a.problem || 'General Urology Consultation',
+          source: 'Appointment'
+        });
+      } else {
+        const item = patientMap.get(key);
+        item._visitsSet.add(visitToken);
+        if (a.email && !item.email) item.email = a.email;
+        if (a.visitId && !item.visitId) item.visitId = a.visitId;
+      }
+    }
+
+    // 2. Process from Bills
+    for (const b of bills) {
+      const rawName = b.patientName ? b.patientName.trim() : 'Patient';
+      const cleanPhone = b.phone ? String(b.phone).replace(/\D/g, '').slice(-10) : '';
+      const normName = rawName.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const key = cleanPhone ? `${normName}_${cleanPhone}` : normName;
+      if (!key) continue;
+
+      const nameParts = rawName.split(' ');
+      const firstName = nameParts[0] || rawName;
+      const lastName = nameParts.slice(1).join(' ') || '';
+      const regDate = b.createdAt ? new Date(b.createdAt).toISOString().split('T')[0] : '2026-11-19';
+
+      const uhid = b.patientId && b.patientId.startsWith('UHID-')
+        ? b.patientId
+        : (b.visitId ? `UHID-${b.visitId.replace(/\D/g, '')}` : (cleanPhone ? `UHID-${cleanPhone.slice(-5)}` : `UHID-${String(b._id).slice(-5).toUpperCase()}`));
+
+      const visitToken = b.visitId || (b.visitDate ? b.visitDate : b.billId || String(b._id));
+
+      if (!patientMap.has(key)) {
+        const vSet = new Set();
+        vSet.add(visitToken);
+
+        patientMap.set(key, {
+          id: String(b._id),
+          uhid,
+          firstName,
+          lastName,
+          name: rawName,
+          age: Number(b.age) || 35,
+          gender: b.gender || 'Male',
+          mobile: b.phone || '',
+          email: '',
+          address: 'Lucknow, Uttar Pradesh',
+          emergencyContact: b.phone || '',
+          status: 'Active',
+          registeredOn: regDate,
+          visitId: b.visitId || '',
+          _visitsSet: vSet,
+          latestVisitDate: b.visitDate || regDate,
+          latestProblem: b.diagnosis || 'OPD Consultation',
+          source: 'Billing'
+        });
+      } else {
+        const item = patientMap.get(key);
+        item._visitsSet.add(visitToken);
+        if (b.patientId && b.patientId.startsWith('UHID-')) item.uhid = b.patientId;
+        if (b.phone && !item.mobile) item.mobile = b.phone;
+        if (b.visitId && !item.visitId) item.visitId = b.visitId;
+      }
+    }
+
+    const patientsList = Array.from(patientMap.values()).map((p) => {
+      const { _visitsSet, ...cleanPatient } = p;
+      return {
+        ...cleanPatient,
+        totalVisits: _visitsSet ? _visitsSet.size : 1
+      };
+    }).sort((a, b) => {
+      return new Date(b.registeredOn).getTime() - new Date(a.registeredOn).getTime();
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: patientsList.length,
+      data: patientsList
+    });
+  } catch (error) {
+    console.error('Get All Patients Error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error retrieving patients list'
+    });
+  }
+};
+
+// @desc    Register a new permanent patient
+// @route   POST /api/admin/patients
+// @access  Private
+export const registerNewPatient = async (req, res) => {
+  try {
+    const {
+      firstName,
+      lastName,
+      name,
+      mobile,
+      email,
+      age,
+      gender,
+      address,
+      emergencyContact,
+      problem,
+      clinic
+    } = req.body;
+
+    const patientFullName = name || `${firstName || ''} ${lastName || ''}`.trim();
+    if (!patientFullName) {
+      return res.status(400).json({ success: false, message: 'Patient name is required' });
+    }
+
+    if (!mobile || !String(mobile).trim()) {
+      return res.status(400).json({ success: false, message: 'Mobile number is required' });
+    }
+
+    const cleanMobile = String(mobile).replace(/\D/g, '').slice(-10);
+    const countApt = await Appointment.countDocuments();
+    const nextVisitNumber = 5000 + countApt + 1;
+    const visitId = `VIS-${nextVisitNumber}`;
+    const uhid = `UHID-${cleanMobile.slice(-5) || Math.floor(10000 + Math.random() * 90000)}`;
+
+    const Clinic = (await import('../models/Clinic.js')).default;
+    const defaultClinic = clinic || (await Clinic.findOne({}))?._id;
+
+    const now = new Date();
+    const formattedDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    const newApt = await Appointment.create({
+      name: patientFullName,
+      phone: mobile.trim(),
+      email: email ? email.trim() : '',
+      age: Number(age) || 35,
+      gender: gender || 'Male',
+      clinic: defaultClinic,
+      problem: problem || 'General Urology Consultation',
+      date: formattedDate,
+      time: '11:00 AM',
+      message: address ? address.trim() : '',
+      status: 'Confirmed',
+      visitId
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Patient registered successfully',
+      data: {
+        id: String(newApt._id),
+        uhid,
+        firstName: firstName || patientFullName.split(' ')[0],
+        lastName: lastName || patientFullName.split(' ').slice(1).join(' '),
+        name: patientFullName,
+        mobile: newApt.phone,
+        email: newApt.email,
+        age: newApt.age,
+        gender: newApt.gender,
+        address: address || 'Lucknow, Uttar Pradesh',
+        emergencyContact: emergencyContact || newApt.phone,
+        status: 'Active',
+        registeredOn: now.toISOString().split('T')[0],
+        visitId: newApt.visitId,
+        totalVisits: 1
+      }
+    });
+  } catch (error) {
+    console.error('Register Patient Error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error registering patient: ' + error.message
+    });
   }
 };
 
