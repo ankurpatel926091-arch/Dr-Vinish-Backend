@@ -36,8 +36,59 @@ export const getBlogBySlugOrId = async (req, res) => {
 // @route   GET /api/blogs/admin/all or GET /api/blogs/admin
 export const getAdminBlogs = async (req, res) => {
   try {
-    const blogs = await Blog.find({}).sort({ createdAt: -1 });
-    res.json({ success: true, count: blogs.length, data: blogs });
+    const { search, category, status, page, limit } = req.query;
+    const conditions = [];
+
+    const escapeRegex = (val) => String(val).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    if (status && String(status).trim().toLowerCase() !== 'all') {
+      conditions.push({
+        status: new RegExp(`^${escapeRegex(String(status).trim())}$`, 'i')
+      });
+    }
+
+    if (category && String(category).trim().toLowerCase() !== 'all') {
+      conditions.push({
+        category: new RegExp(`^${escapeRegex(String(category).trim())}$`, 'i')
+      });
+    }
+
+    if (search && String(search).trim()) {
+      const searchRegex = new RegExp(escapeRegex(String(search).trim()), 'i');
+      conditions.push({
+        $or: [
+          { title: searchRegex },
+          { category: searchRegex },
+          { shortDescription: searchRegex }
+        ]
+      });
+    }
+
+    const mongoQuery = conditions.length > 0 ? { $and: conditions } : {};
+    const total = await Blog.countDocuments(mongoQuery);
+
+    let query = Blog.find(mongoQuery).sort({ createdAt: -1 });
+
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const isPaginated = !isNaN(pageNum) && pageNum > 0 && !isNaN(limitNum) && limitNum > 0;
+
+    if (isPaginated) {
+      const skip = (pageNum - 1) * limitNum;
+      query = query.skip(skip).limit(limitNum);
+    }
+
+    const blogs = await query;
+
+    res.json({
+      success: true,
+      total,
+      page: isPaginated ? pageNum : 1,
+      totalPages: isPaginated ? Math.ceil(total / limitNum) : 1,
+      limit: isPaginated ? limitNum : total,
+      count: blogs.length,
+      data: blogs
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

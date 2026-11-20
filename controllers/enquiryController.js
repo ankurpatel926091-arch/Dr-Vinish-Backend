@@ -44,9 +44,52 @@ export const createEnquiry = async (req, res) => {
 // @access  Private/Admin
 export const getAdminEnquiries = async (req, res) => {
   try {
-    const enquiries = await Enquiry.find().sort({ createdAt: -1 });
+    const { search, status, page, limit } = req.query;
+    const conditions = [];
+
+    const escapeRegex = (val) => String(val).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    if (status && String(status).trim().toLowerCase() !== 'all') {
+      conditions.push({
+        status: new RegExp(`^${escapeRegex(String(status).trim())}$`, 'i')
+      });
+    }
+
+    if (search && String(search).trim()) {
+      const searchRegex = new RegExp(escapeRegex(String(search).trim()), 'i');
+      conditions.push({
+        $or: [
+          { name: searchRegex },
+          { phone: searchRegex },
+          { subject: searchRegex },
+          { service: searchRegex },
+          { message: searchRegex }
+        ]
+      });
+    }
+
+    const mongoQuery = conditions.length > 0 ? { $and: conditions } : {};
+    const total = await Enquiry.countDocuments(mongoQuery);
+
+    let query = Enquiry.find(mongoQuery).sort({ createdAt: -1 });
+
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const isPaginated = !isNaN(pageNum) && pageNum > 0 && !isNaN(limitNum) && limitNum > 0;
+
+    if (isPaginated) {
+      const skip = (pageNum - 1) * limitNum;
+      query = query.skip(skip).limit(limitNum);
+    }
+
+    const enquiries = await query;
+
     res.status(200).json({
       success: true,
+      total,
+      page: isPaginated ? pageNum : 1,
+      totalPages: isPaginated ? Math.ceil(total / limitNum) : 1,
+      limit: isPaginated ? limitNum : total,
       count: enquiries.length,
       data: enquiries
     });

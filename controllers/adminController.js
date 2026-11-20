@@ -324,7 +324,7 @@ export const getAllPatients = async (req, res) => {
       }
     }
 
-    const patientsList = Array.from(patientMap.values()).map((p) => {
+    let patientsList = Array.from(patientMap.values()).map((p) => {
       const { _visitsSet, ...cleanPatient } = p;
       return {
         ...cleanPatient,
@@ -334,10 +334,43 @@ export const getAllPatients = async (req, res) => {
       return new Date(b.registeredOn).getTime() - new Date(a.registeredOn).getTime();
     });
 
+    const { search, gender, page, limit } = req.query;
+
+    if (search && String(search).trim()) {
+      const q = String(search).trim().toLowerCase();
+      patientsList = patientsList.filter(p =>
+        (p.name && p.name.toLowerCase().includes(q)) ||
+        (p.uhid && p.uhid.toLowerCase().includes(q)) ||
+        (p.mobile && p.mobile.includes(q)) ||
+        (p.email && p.email.toLowerCase().includes(q)) ||
+        (p.latestProblem && p.latestProblem.toLowerCase().includes(q))
+      );
+    }
+
+    if (gender && String(gender).trim().toLowerCase() !== 'all') {
+      const g = String(gender).trim().toLowerCase();
+      patientsList = patientsList.filter(p => (p.gender || '').toLowerCase() === g);
+    }
+
+    const total = patientsList.length;
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const isPaginated = !isNaN(pageNum) && pageNum > 0 && !isNaN(limitNum) && limitNum > 0;
+
+    let pagedData = patientsList;
+    if (isPaginated) {
+      const skip = (pageNum - 1) * limitNum;
+      pagedData = patientsList.slice(skip, skip + limitNum);
+    }
+
     return res.status(200).json({
       success: true,
-      count: patientsList.length,
-      data: patientsList
+      total,
+      page: isPaginated ? pageNum : 1,
+      totalPages: isPaginated ? Math.ceil(total / limitNum) : 1,
+      limit: isPaginated ? limitNum : total,
+      count: pagedData.length,
+      data: pagedData
     });
   } catch (error) {
     console.error('Get All Patients Error:', error.message);

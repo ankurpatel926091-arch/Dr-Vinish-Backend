@@ -7,13 +7,152 @@ import Appointment from '../models/Appointment.js';
 // @access  Private/Admin
 export const getAllBills = async (req, res) => {
   try {
-    const bills = await Bill.find()
+    const { search, paymentStatus, page, limit, startDate, endDate, date } = req.query;
+    const conditions = [];
+
+    const escapeRegex = (val) => String(val).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    if (paymentStatus && String(paymentStatus).trim().toLowerCase() !== 'all') {
+      conditions.push({
+        paymentStatus: new RegExp(`^${escapeRegex(String(paymentStatus).trim())}$`, 'i')
+      });
+    }
+
+    if (search && String(search).trim()) {
+      const searchRegex = new RegExp(escapeRegex(String(search).trim()), 'i');
+      conditions.push({
+        $or: [
+          { billId: searchRegex },
+          { patientName: searchRegex },
+          { phone: searchRegex },
+          { patientId: searchRegex },
+          { visitId: searchRegex },
+          { diagnosis: searchRegex }
+        ]
+      });
+    }
+
+    // Date range or single date filtering
+    if (startDate && endDate) {
+      const s = new Date(startDate);
+      s.setHours(0, 0, 0, 0);
+      const e = new Date(endDate);
+      e.setHours(23, 59, 59, 999);
+      if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
+        conditions.push({ createdAt: { $gte: s, $lte: e } });
+      }
+    } else if (date && date !== 'all') {
+      const s = new Date(date);
+      s.setHours(0, 0, 0, 0);
+      const e = new Date(date);
+      e.setHours(23, 59, 59, 999);
+      if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
+        conditions.push({ createdAt: { $gte: s, $lte: e } });
+      }
+    }
+
+    const mongoQuery = conditions.length > 0 ? { $and: conditions } : {};
+    const total = await Bill.countDocuments(mongoQuery);
+
+    // Compute Aggregate Day-End Settlement Summary (Cash vs UPI vs Card & Collections)
+    const summaryAgg = await Bill.aggregate([
+      ...(conditions.length > 0 ? [{ $match: { $and: conditions } }] : []),
+      {
+        $group: {
+          _id: null,
+          totalBilled: { $sum: '$totalAmount' },
+          totalCollected: { $sum: '$paidAmount' },
+          totalDue: { $sum: '$dueAmount' },
+          cashTotal: {
+            $sum: {
+              $cond: [
+                {
+                  $regexMatch: {
+                    input: { $ifNull: ['$paymentMode', ''] },
+                    regex: /cash/i
+                  }
+                },
+                '$paidAmount',
+                0
+              ]
+            }
+          },
+          upiTotal: {
+            $sum: {
+              $cond: [
+                {
+                  $regexMatch: {
+                    input: { $ifNull: ['$paymentMode', ''] },
+                    regex: /upi|online|gpay|phonepe/i
+                  }
+                },
+                '$paidAmount',
+                0
+              ]
+            }
+          },
+          cardTotal: {
+            $sum: {
+              $cond: [
+                {
+                  $regexMatch: {
+                    input: { $ifNull: ['$paymentMode', ''] },
+                    regex: /card/i
+                  }
+                },
+                '$paidAmount',
+                0
+              ]
+            }
+          },
+          paidCount: {
+            $sum: {
+              $cond: [{ $eq: ['$paymentStatus', 'Paid'] }, 1, 0]
+            }
+          },
+          pendingCount: {
+            $sum: {
+              $cond: [{ $in: ['$paymentStatus', ['Pending', 'Partial']] }, 1, 0]
+            }
+          }
+        }
+      }
+    ]);
+
+    const summaryData = summaryAgg[0] || {
+      totalBilled: 0,
+      totalCollected: 0,
+      totalDue: 0,
+      cashTotal: 0,
+      upiTotal: 0,
+      cardTotal: 0,
+      paidCount: 0,
+      pendingCount: 0
+    };
+
+    let query = Bill.find(mongoQuery)
       .populate('appointment')
       .sort({ createdAt: -1 });
 
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const isPaginated = !isNaN(pageNum) && pageNum > 0 && !isNaN(limitNum) && limitNum > 0;
+
+    if (isPaginated) {
+      const skip = (pageNum - 1) * limitNum;
+      query = query.skip(skip).limit(limitNum);
+    }
+
+    const bills = await query;
+
     res.status(200).json({
       success: true,
+      total,
+      page: isPaginated ? pageNum : 1,
+      totalPages: isPaginated ? Math.ceil(total / limitNum) : 1,
+      limit: isPaginated ? limitNum : total,
       count: bills.length,
+      summary: summaryData,
       data: bills
     });
   } catch (error) {
@@ -224,6 +363,79 @@ export const deleteBill = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error while deleting bill: ' + error.message
+    });
+  }
+};
+
+// @desc    Get day-by-day collection summary (Cash vs UPI vs Total)
+// @route   GET /api/billing/admin/daily-summary
+// @access  Private/Admin
+export const getDailyCollectionSummary = async (req, res) => {
+  try {
+    const days = parseInt(req.query.days, 10) || 30;
+    const sinceDate = new Date();
+    sinceDate.setDate(sinceDate.getDate() - days);
+    sinceDate.setHours(0, 0, 0, 0);
+
+    const daily = await Bill.aggregate([
+      { $match: { createdAt: { $gte: sinceDate } } },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          totalBills: { $sum: 1 },
+          totalBilled: { $sum: "$totalAmount" },
+          totalCollected: { $sum: "$paidAmount" },
+          totalDue: { $sum: "$dueAmount" },
+          cashTotal: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ["$paymentMode", ""] }, regex: /cash/i } },
+                "$paidAmount",
+                0
+              ]
+            }
+          },
+          upiTotal: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ["$paymentMode", ""] }, regex: /upi|online|gpay|phonepe/i } },
+                "$paidAmount",
+                0
+              ]
+            }
+          },
+          cardTotal: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ["$paymentMode", ""] }, regex: /card/i } },
+                "$paidAmount",
+                0
+              ]
+            }
+          },
+          paidCount: {
+            $sum: { $cond: [{ $eq: ["$paymentStatus", "Paid"] }, 1, 0] }
+          },
+          pendingCount: {
+            $sum: { $cond: [{ $in: ["$paymentStatus", ["Pending", "Partial"]] }, 1, 0] }
+          }
+        }
+      },
+      { $sort: { _id: -1 } }
+    ]);
+
+    res.status(200).json({
+      success: true,
+      count: daily.length,
+      data: daily
+    });
+  } catch (error) {
+    console.error("Get Daily Collection Summary Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching daily summary: " + error.message
     });
   }
 };

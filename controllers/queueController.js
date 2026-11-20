@@ -133,6 +133,17 @@ export const addToQueue = async (req, res) => {
       });
     }
 
+    // Strict Hospital Policy: Prevent adding patient to Doctor Queue if linked bill has due amount pending
+    if (bill) {
+      const billDoc = await Bill.findById(bill);
+      if (billDoc && billDoc.dueAmount > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot add to Doctor Queue: Bill ${billDoc.billId || ''} has pending due amount of ₹${billDoc.dueAmount}. Please collect full payment first.`
+        });
+      }
+    }
+
     const today = getTodayDateString();
 
     // Check if patient with this visitId, appointment, or mobile is already in today's active queue

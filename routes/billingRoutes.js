@@ -3,13 +3,15 @@ import {
   getAllBills,
   createBill,
   updateBill,
-  deleteBill
+  deleteBill,
+  getDailyCollectionSummary
 } from '../controllers/billingController.js';
 import { protectAdmin } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
 router.get('/admin/all', protectAdmin, getAllBills);
+router.get('/admin/daily-summary', protectAdmin, getDailyCollectionSummary);
 router.post('/admin', protectAdmin, createBill);
 router.put('/admin/:id', protectAdmin, updateBill);
 router.delete('/admin/:id', protectAdmin, deleteBill);

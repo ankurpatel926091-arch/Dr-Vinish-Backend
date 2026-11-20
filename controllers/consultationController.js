@@ -104,9 +104,46 @@ export const createOrUpdateConsultation = async (req, res) => {
 // @access  Private/Doctor/Admin
 export const getConsultations = async (req, res) => {
   try {
-    const consultations = await Consultation.find().sort({ createdAt: -1 });
+    const { search, page, limit } = req.query;
+    const conditions = [];
+
+    const escapeRegex = (val) => String(val).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    if (search && String(search).trim()) {
+      const searchRegex = new RegExp(escapeRegex(String(search).trim()), 'i');
+      conditions.push({
+        $or: [
+          { patientName: searchRegex },
+          { patientId: searchRegex },
+          { diagnosis: searchRegex },
+          { complaint: searchRegex },
+          { phone: searchRegex }
+        ]
+      });
+    }
+
+    const mongoQuery = conditions.length > 0 ? { $and: conditions } : {};
+    const total = await Consultation.countDocuments(mongoQuery);
+
+    let query = Consultation.find(mongoQuery).sort({ createdAt: -1 });
+
+    const pageNum = parseInt(page, 10);
+    const limitNum = parseInt(limit, 10);
+    const isPaginated = !isNaN(pageNum) && pageNum > 0 && !isNaN(limitNum) && limitNum > 0;
+
+    if (isPaginated) {
+      const skip = (pageNum - 1) * limitNum;
+      query = query.skip(skip).limit(limitNum);
+    }
+
+    const consultations = await query;
+
     res.status(200).json({
       success: true,
+      total,
+      page: isPaginated ? pageNum : 1,
+      totalPages: isPaginated ? Math.ceil(total / limitNum) : 1,
+      limit: isPaginated ? limitNum : total,
       count: consultations.length,
       data: consultations
     });
