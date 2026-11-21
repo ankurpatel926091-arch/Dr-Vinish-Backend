@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import Appointment from '../models/Appointment.js';
 import Clinic from '../models/Clinic.js';
+import Bill from '../models/Bill.js';
 import {
   sendAppointmentConfirmationEmail,
   sendAppointmentCancellationEmail,
@@ -346,6 +347,47 @@ export const checkInAppointment = async (req, res) => {
 
     // Idempotent return if already checked in with visitId and tokenNumber
     if (appointment.status === 'Checked-in' && appointment.visitId && appointment.tokenNumber) {
+      try {
+        const existingBill = await Bill.findOne({
+          $or: [
+            { appointment: appointment._id },
+            { visitId: appointment.visitId }
+          ]
+        });
+        if (!existingBill) {
+          const billCount = await Bill.countDocuments({});
+          const generatedBillId = `BILL-${5000 + billCount + 1}`;
+          const patientUHID = appointment.patientId || `UHID-${appointment.visitId.replace(/\D/g, '')}`;
+          const fee = Number(appointment.consultationFee) || 1000;
+          await Bill.create({
+            billId: generatedBillId,
+            visitId: appointment.visitId,
+            appointment: appointment._id,
+            patientId: patientUHID,
+            patientName: appointment.name || 'Patient',
+            phone: appointment.phone || '',
+            age: Number(appointment.age) || 35,
+            gender: appointment.gender || 'Male',
+            doctor: appointment.doctorName || 'Dr. Vinish Kumar Singh',
+            department: 'Urology',
+            hospital: 'Rudraksh IVF & Urology Centre',
+            visitDate: appointment.date || 'Today',
+            diagnosis: appointment.problem || 'General Urology Consultation',
+            consultationFee: fee,
+            services: [{ name: 'OPD Consultation', amount: fee }],
+            discount: 0,
+            totalAmount: fee,
+            paidAmount: 0,
+            dueAmount: fee,
+            paymentMode: null,
+            paymentStatus: 'Pending',
+            invoiceStatus: 'Unpaid'
+          });
+        }
+      } catch (err) {
+        console.warn('Idempotent bill check notice:', err.message);
+      }
+
       const existingPopulated = await Appointment.findById(appointment._id)
         .populate('clinic', 'name address phone tag badgeLabel timings');
       return res.status(200).json({
@@ -401,6 +443,53 @@ export const checkInAppointment = async (req, res) => {
       },
       { new: true }
     ).populate('clinic', 'name address phone tag badgeLabel timings');
+
+    // Automatically generate a Pending Bill for the checked-in patient if not already exists!
+    try {
+      const existingBill = await Bill.findOne({
+        $or: [
+          { appointment: appointment._id },
+          ...(visitId ? [{ visitId: visitId }] : [])
+        ]
+      });
+
+      if (!existingBill) {
+        const billCount = await Bill.countDocuments({});
+        const generatedBillId = `BILL-${5000 + billCount + 1}`;
+        const patientUHID = appointment.patientId || (visitId ? `UHID-${visitId.replace(/\D/g, '')}` : `UHID-${String(appointment._id).slice(-5).toUpperCase()}`);
+        const clinicName = typeof populatedAppointment.clinic === 'object' && populatedAppointment.clinic?.name
+          ? populatedAppointment.clinic.name
+          : 'Rudraksh IVF & Urology Centre';
+        const fee = Number(appointment.consultationFee) || 1000;
+
+        await Bill.create({
+          billId: generatedBillId,
+          visitId: visitId,
+          appointment: appointment._id,
+          patientId: patientUHID,
+          patientName: appointment.name || 'Patient',
+          phone: appointment.phone || '',
+          age: Number(appointment.age) || 35,
+          gender: appointment.gender || 'Male',
+          doctor: appointment.doctorName || 'Dr. Vinish Kumar Singh',
+          department: 'Urology',
+          hospital: clinicName,
+          visitDate: appointment.date || 'Today',
+          diagnosis: appointment.problem || 'General Urology Consultation',
+          consultationFee: fee,
+          services: [{ name: 'OPD Consultation', amount: fee }],
+          discount: 0,
+          totalAmount: fee,
+          paidAmount: 0,
+          dueAmount: fee,
+          paymentMode: null,
+          paymentStatus: 'Pending',
+          invoiceStatus: 'Unpaid'
+        });
+      }
+    } catch (billErr) {
+      console.warn('Auto-create pending bill on check-in notice:', billErr.message);
+    }
 
     res.status(200).json({
       success: true,
