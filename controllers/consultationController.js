@@ -104,7 +104,7 @@ export const createOrUpdateConsultation = async (req, res) => {
 // @access  Private/Doctor/Admin
 export const getConsultations = async (req, res) => {
   try {
-    const { search, page, limit } = req.query;
+    const { search, page, limit, filter, status } = req.query;
     const conditions = [];
 
     const escapeRegex = (val) => String(val).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -122,6 +122,23 @@ export const getConsultations = async (req, res) => {
       });
     }
 
+    const activeFilter = filter || status;
+    if (activeFilter && String(activeFilter).trim() && String(activeFilter).toLowerCase() !== 'all') {
+      const trimmed = String(activeFilter).trim().toLowerCase();
+      if (['with prescriptions', 'with rx', 'with_prescriptions', 'prescriptions'].includes(trimmed)) {
+        conditions.push({
+          'medicines.0': { $exists: true },
+          'medicines.0.name': { $exists: true, $ne: '' }
+        });
+      } else if (['with investigations', 'with tests', 'with_investigations', 'investigations'].includes(trimmed)) {
+        conditions.push({
+          investigation: { $exists: true, $nin: ['', null, '—', 'None', 'none'] }
+        });
+      } else {
+        conditions.push({ status: activeFilter });
+      }
+    }
+
     const mongoQuery = conditions.length > 0 ? { $and: conditions } : {};
     const total = await Consultation.countDocuments(mongoQuery);
 
@@ -136,7 +153,12 @@ export const getConsultations = async (req, res) => {
       query = query.skip(skip).limit(limitNum);
     }
 
-    const consultations = await query;
+    const [consultations, totalConsultations, totalPrescriptions, totalInvestigations] = await Promise.all([
+      query,
+      Consultation.countDocuments({}),
+      Consultation.countDocuments({ 'medicines.0.name': { $exists: true, $ne: '' } }),
+      Consultation.countDocuments({ investigation: { $exists: true, $nin: ['', null, '—', 'None', 'none'] } })
+    ]);
 
     res.status(200).json({
       success: true,
@@ -145,6 +167,11 @@ export const getConsultations = async (req, res) => {
       totalPages: isPaginated ? Math.ceil(total / limitNum) : 1,
       limit: isPaginated ? limitNum : total,
       count: consultations.length,
+      stats: {
+        total: totalConsultations,
+        prescriptions: totalPrescriptions,
+        investigations: totalInvestigations
+      },
       data: consultations
     });
   } catch (error) {

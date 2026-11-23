@@ -146,7 +146,7 @@ export const addToQueue = async (req, res) => {
 
     const today = getTodayDateString();
 
-    // Check if patient with this visitId, appointment, or mobile is already in today's active queue
+    // Check if patient with this visitId, appointment, mobile, or name is already in today's active queue
     const queryOr = [];
     if (visitId && visitId.trim()) queryOr.push({ visitId: visitId.trim() });
     if (appointment) queryOr.push({ appointment });
@@ -154,8 +154,27 @@ export const addToQueue = async (req, res) => {
     if (cleanMobile && cleanMobile.length === 10) {
       queryOr.push({ mobile: new RegExp(cleanMobile + '$') });
     }
+    if (patientName && String(patientName).trim()) {
+      queryOr.push({ patientName: new RegExp('^' + String(patientName).trim() + '$', 'i') });
+    }
 
     if (queryOr.length > 0) {
+      // 1. Safeguard: Prevent re-adding a patient whose consultation is already completed today
+      const completedExisting = await DoctorQueue.findOne({
+        queueDate: today,
+        status: { $in: ['Completed', 'completed'] },
+        $or: queryOr
+      });
+      if (completedExisting) {
+        return res.status(400).json({
+          success: false,
+          isCompleted: true,
+          message: `Consultation for ${completedExisting.patientName || 'this patient'} is already completed today (Token: ${completedExisting.tokenNumber}).`,
+          data: completedExisting
+        });
+      }
+
+      // 2. Safeguard: If already waiting or in consultation, return existing item (do not duplicate)
       const existing = await DoctorQueue.findOne({
         queueDate: today,
         status: { $in: ['Waiting', 'Consulting', 'waiting', 'consulting'] },
@@ -164,8 +183,21 @@ export const addToQueue = async (req, res) => {
       if (existing) {
         return res.status(200).json({
           success: true,
-          message: 'Patient is already in today queue',
+          alreadyInQueue: true,
+          message: `Patient ${existing.patientName || 'this patient'} is already in Doctor Queue with Token ${existing.tokenNumber} (Status: ${existing.status}).`,
           data: existing
+        });
+      }
+    }
+
+    // 3. Safeguard: If linked appointment is already Visited / Completed, do not add back to waiting queue
+    if (appointment) {
+      const apt = await Appointment.findById(appointment);
+      if (apt && (String(apt.status).toLowerCase() === 'visited' || String(apt.status).toLowerCase() === 'completed')) {
+        return res.status(400).json({
+          success: false,
+          isCompleted: true,
+          message: `Consultation for this patient is already completed (Appointment Visited).`
         });
       }
     }
