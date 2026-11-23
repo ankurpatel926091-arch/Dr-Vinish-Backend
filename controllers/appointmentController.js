@@ -346,7 +346,7 @@ export const checkInAppointment = async (req, res) => {
     }
 
     // Idempotent return if already checked in with visitId and tokenNumber
-    if (appointment.status === 'Checked-in' && appointment.visitId && appointment.tokenNumber) {
+    if (/^checked[-_ ]?in$/i.test(appointment.status) && appointment.visitId && appointment.tokenNumber) {
       try {
         const existingBill = await Bill.findOne({
           $or: [
@@ -355,10 +355,19 @@ export const checkInAppointment = async (req, res) => {
           ]
         });
         if (!existingBill) {
-          const billCount = await Bill.countDocuments({});
-          const generatedBillId = `BILL-${5000 + billCount + 1}`;
-          const patientUHID = appointment.patientId || `UHID-${appointment.visitId.replace(/\D/g, '')}`;
+          let generatedBillId = `BILL-${Math.floor(1000 + Math.random() * 9000)}`;
+          for (let attempts = 0; attempts < 10; attempts++) {
+            const dup = await Bill.findOne({ billId: generatedBillId });
+            if (!dup) break;
+            generatedBillId = `BILL-${Math.floor(1000 + Math.random() * 9000)}`;
+          }
+
+          const rawGender = String(appointment.gender || '').toLowerCase();
+          const cleanGender = rawGender.includes('fem') ? 'Female' : rawGender.includes('oth') ? 'Other' : 'Male';
+          const cleanAge = parseInt(String(appointment.age || '35').replace(/\D/g, ''), 10) || 35;
           const fee = Number(appointment.consultationFee) || 1000;
+          const patientUHID = appointment.patientId || `UHID-${appointment.visitId.replace(/\D/g, '')}`;
+
           await Bill.create({
             billId: generatedBillId,
             visitId: appointment.visitId,
@@ -366,13 +375,13 @@ export const checkInAppointment = async (req, res) => {
             patientId: patientUHID,
             patientName: appointment.name || 'Patient',
             phone: appointment.phone || '',
-            age: Number(appointment.age) || 35,
-            gender: appointment.gender || 'Male',
+            age: cleanAge,
+            gender: cleanGender,
             doctor: appointment.doctorName || 'Dr. Vinish Kumar Singh',
             department: 'Urology',
             hospital: 'Rudraksh IVF & Urology Centre',
             visitDate: appointment.date || 'Today',
-            diagnosis: appointment.problem || 'General Urology Consultation',
+            diagnosis: appointment.problem || appointment.speciality || 'General Urology Consultation',
             consultationFee: fee,
             services: [{ name: 'OPD Consultation', amount: fee }],
             discount: 0,
@@ -446,36 +455,49 @@ export const checkInAppointment = async (req, res) => {
 
     // Automatically generate a Pending Bill for the checked-in patient if not already exists!
     try {
+      const vId = visitId || (appointment._id ? `VIS-${String(appointment._id).slice(-4).toUpperCase()}` : '');
       const existingBill = await Bill.findOne({
         $or: [
           { appointment: appointment._id },
-          ...(visitId ? [{ visitId: visitId }] : [])
+          ...(vId ? [{ visitId: vId }] : [])
         ]
       });
 
       if (!existingBill) {
-        const billCount = await Bill.countDocuments({});
-        const generatedBillId = `BILL-${5000 + billCount + 1}`;
-        const patientUHID = appointment.patientId || (visitId ? `UHID-${visitId.replace(/\D/g, '')}` : `UHID-${String(appointment._id).slice(-5).toUpperCase()}`);
-        const clinicName = typeof populatedAppointment.clinic === 'object' && populatedAppointment.clinic?.name
-          ? populatedAppointment.clinic.name
-          : 'Rudraksh IVF & Urology Centre';
+        let generatedBillId = `BILL-${Math.floor(1000 + Math.random() * 9000)}`;
+        for (let attempts = 0; attempts < 10; attempts++) {
+          const dup = await Bill.findOne({ billId: generatedBillId });
+          if (!dup) break;
+          generatedBillId = `BILL-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+
+        const rawGender = String(appointment.gender || '').toLowerCase();
+        const cleanGender = rawGender.includes('fem') ? 'Female' : rawGender.includes('oth') ? 'Other' : 'Male';
+        const cleanAge = parseInt(String(appointment.age || '35').replace(/\D/g, ''), 10) || 35;
         const fee = Number(appointment.consultationFee) || 1000;
+        const patientUHID = appointment.patientId || (vId ? `UHID-${vId.replace(/\D/g, '')}` : `UHID-${String(appointment._id).slice(-5).toUpperCase()}`);
+        
+        let clinicName = 'Rudraksh IVF & Urology Centre';
+        if (typeof populatedAppointment.clinic === 'object' && populatedAppointment.clinic?.name) {
+          clinicName = populatedAppointment.clinic.name;
+        } else if (typeof populatedAppointment.clinic === 'string' && populatedAppointment.clinic.trim()) {
+          clinicName = populatedAppointment.clinic.trim();
+        }
 
         await Bill.create({
           billId: generatedBillId,
-          visitId: visitId,
+          visitId: vId,
           appointment: appointment._id,
           patientId: patientUHID,
           patientName: appointment.name || 'Patient',
           phone: appointment.phone || '',
-          age: Number(appointment.age) || 35,
-          gender: appointment.gender || 'Male',
+          age: cleanAge,
+          gender: cleanGender,
           doctor: appointment.doctorName || 'Dr. Vinish Kumar Singh',
           department: 'Urology',
           hospital: clinicName,
           visitDate: appointment.date || 'Today',
-          diagnosis: appointment.problem || 'General Urology Consultation',
+          diagnosis: appointment.problem || appointment.speciality || 'General Urology Consultation',
           consultationFee: fee,
           services: [{ name: 'OPD Consultation', amount: fee }],
           discount: 0,

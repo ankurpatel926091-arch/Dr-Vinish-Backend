@@ -10,50 +10,73 @@ export const getAllBills = async (req, res) => {
     // Auto-sync checked-in appointments without bills into Pending OPD Bills
     try {
       const checkedInApts = await Appointment.find({
-        status: { $regex: /^checked[- ]?in$/i }
-      }).limit(50);
+        $or: [
+          { status: { $regex: /^checked[-_ ]?in$/i } },
+          { checkInAt: { $exists: true, $nin: [null, ''] } },
+          { visitId: { $exists: true, $nin: [null, ''] } }
+        ]
+      }).sort({ updatedAt: -1 }).limit(100);
 
       if (checkedInApts && checkedInApts.length > 0) {
         for (const apt of checkedInApts) {
-          const vId = apt.visitId || (apt._id ? `VIS-${String(apt._id).slice(-4)}` : '');
-          const existing = await Bill.findOne({
-            $or: [
-              { appointment: apt._id },
-              ...(vId ? [{ visitId: vId }] : [])
-            ]
-          });
-
-          if (!existing) {
-            const billCount = await Bill.countDocuments({});
-            const generatedBillId = `BILL-${5000 + billCount + 1}`;
-            const fee = Number(apt.consultationFee) || 1000;
-            const patientUHID = apt.patientId || (vId ? `UHID-${vId.replace(/\D/g, '')}` : `UHID-${String(apt._id).slice(-5).toUpperCase()}`);
-            const clinicName = typeof apt.clinic === 'object' && apt.clinic?.name ? apt.clinic.name : 'Rudraksh IVF & Urology Centre';
-
-            await Bill.create({
-              billId: generatedBillId,
-              visitId: vId,
-              appointment: apt._id,
-              patientId: patientUHID,
-              patientName: apt.name || 'Patient',
-              phone: apt.phone || '',
-              age: Number(apt.age) || 35,
-              gender: apt.gender || 'Male',
-              doctor: apt.doctorName || 'Dr. Vinish Kumar Singh',
-              department: 'Urology',
-              hospital: clinicName,
-              visitDate: apt.date || 'Today',
-              diagnosis: apt.problem || 'General Urology Consultation',
-              consultationFee: fee,
-              services: [{ name: 'OPD Consultation', amount: fee }],
-              discount: 0,
-              totalAmount: fee,
-              paidAmount: 0,
-              dueAmount: fee,
-              paymentMode: null,
-              paymentStatus: 'Pending',
-              invoiceStatus: 'Unpaid'
+          try {
+            const vId = apt.visitId || (apt._id ? `VIS-${String(apt._id).slice(-4).toUpperCase()}` : '');
+            
+            const existing = await Bill.findOne({
+              $or: [
+                { appointment: apt._id },
+                ...(vId ? [{ visitId: vId }] : [])
+              ]
             });
+
+            if (!existing) {
+              let generatedBillId = `BILL-${Math.floor(1000 + Math.random() * 9000)}`;
+              for (let attempts = 0; attempts < 10; attempts++) {
+                const dup = await Bill.findOne({ billId: generatedBillId });
+                if (!dup) break;
+                generatedBillId = `BILL-${Math.floor(1000 + Math.random() * 9000)}`;
+              }
+
+              const rawGender = String(apt.gender || '').toLowerCase();
+              const cleanGender = rawGender.includes('fem') ? 'Female' : rawGender.includes('oth') ? 'Other' : 'Male';
+              const cleanAge = parseInt(String(apt.age || '35').replace(/\D/g, ''), 10) || 35;
+              const fee = Number(apt.consultationFee) || 1000;
+              const patientUHID = apt.patientId || (vId ? `UHID-${vId.replace(/\D/g, '')}` : `UHID-${String(apt._id).slice(-5).toUpperCase()}`);
+              
+              let clinicName = 'Rudraksh IVF & Urology Centre';
+              if (typeof apt.clinic === 'object' && apt.clinic?.name) {
+                clinicName = apt.clinic.name;
+              } else if (typeof apt.clinic === 'string' && apt.clinic.trim()) {
+                clinicName = apt.clinic.trim();
+              }
+
+              await Bill.create({
+                billId: generatedBillId,
+                visitId: vId,
+                appointment: apt._id,
+                patientId: patientUHID,
+                patientName: apt.name || 'Patient',
+                phone: apt.phone || '',
+                age: cleanAge,
+                gender: cleanGender,
+                doctor: apt.doctorName || 'Dr. Vinish Kumar Singh',
+                department: 'Urology',
+                hospital: clinicName,
+                visitDate: apt.date || 'Today',
+                diagnosis: apt.problem || apt.speciality || 'General Urology Consultation',
+                consultationFee: fee,
+                services: [{ name: 'OPD Consultation', amount: fee }],
+                discount: 0,
+                totalAmount: fee,
+                paidAmount: 0,
+                dueAmount: fee,
+                paymentMode: null,
+                paymentStatus: 'Pending',
+                invoiceStatus: 'Unpaid'
+              });
+            }
+          } catch (singleErr) {
+            console.warn('Single apt sync error:', apt?.name, singleErr.message);
           }
         }
       }
