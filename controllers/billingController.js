@@ -289,8 +289,22 @@ export const createBill = async (req, res) => {
     // Check if bill with this billId already exists (idempotency)
     const existingBill = await Bill.findOne({ billId: finalBillId });
     if (existingBill) {
+      if (
+        !visitId ||
+        String(existingBill.visitId || '') !== String(visitId) ||
+        (patientId &&
+          existingBill.patientId &&
+          String(existingBill.patientId) !== String(patientId))
+      ) {
+        return res.status(409).json({
+          success: false,
+          message: `Bill ID ${finalBillId} is already assigned to another visit. Please retry.`,
+        });
+      }
+
       return res.status(200).json({
         success: true,
+        alreadyExists: true,
         message: 'Bill already exists',
         data: existingBill
       });
@@ -300,8 +314,20 @@ export const createBill = async (req, res) => {
     if (visitId) {
       const billByVisit = await Bill.findOne({ visitId });
       if (billByVisit) {
+        if (
+          patientId &&
+          billByVisit.patientId &&
+          String(billByVisit.patientId) !== String(patientId)
+        ) {
+          return res.status(409).json({
+            success: false,
+            message: 'This visit ID is already assigned to another patient.',
+          });
+        }
+
         return res.status(200).json({
           success: true,
+          alreadyExists: true,
           message: 'Bill for this visit already exists',
           data: billByVisit
         });
