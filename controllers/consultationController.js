@@ -4,7 +4,7 @@ import Appointment from '../models/Appointment.js';
 // @desc    Create or update a consultation
 // @route   POST /api/consultations
 // @access  Private/Doctor/Admin
-export const createOrUpdateConsultation = async (req, res) => {
+export const  createOrUpdateConsultation = async (req, res) => {
   try {
     const {
       recordKey,
